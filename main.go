@@ -25,7 +25,7 @@ func run() error {
 	logger.Info("starting alertmanager-webhook-relay")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	defer stop() // safe: os.Exit is called in main(), not in run()
 
 	<-ctx.Done()
 	logger.Info("shutdown signal received", "signal", ctx.Err())

@@ -1,39 +1,44 @@
-.PHONY: build test test-race test-cover fmt vet lint check clean
+.PHONY: help build test test-race test-cover fmt vet lint check clean
 
 APP_NAME := alertmanager-webhook-relay
-RUN := docker compose run --rm dev
+RUN := docker compose --profile tools run --rm dev
+
+## Справка
+
+help: ## Показать доступные цели
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk -F ':.*?## ' '{printf "  %-14s %s\n", $$1, $$2}'
 
 ## Сборка
 
-build:
+build: ## Собрать бинарник
 	$(RUN) go build -buildvcs=false -o $(APP_NAME) .
 
 ## Тесты
 
-test:
+test: ## Запустить тесты
 	$(RUN) go test ./...
 
-test-race:
+test-race: ## Запустить тесты с race detector
 	$(RUN) go test -race ./...
 
-test-cover:
+test-cover: ## Запустить тесты с отчётом покрытия
 	$(RUN) sh -c 'go test -cover -coverprofile=coverage.out ./... && go tool cover -html=coverage.out -o coverage.html'
 
 ## Качество кода
 
-fmt:
+fmt: ## Отформатировать код
 	$(RUN) gofmt -w .
 
-vet:
+vet: ## Запустить go vet
 	$(RUN) go vet ./...
 
-lint:
+lint: ## Запустить линтер
 	$(RUN) golangci-lint run
 
-check: fmt vet lint test-race
+check: fmt vet lint test-race ## Полная проверка: fmt + vet + lint + test-race
 
 ## Очистка
 
-clean:
+clean: ## Удалить артефакты и остановить контейнеры
 	rm -f $(APP_NAME) coverage.out coverage.html
-	docker compose down -v --remove-orphans
+	docker compose --profile tools down -v --remove-orphans
