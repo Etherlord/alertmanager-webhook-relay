@@ -1,0 +1,14 @@
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - .:/app
+      - gomodcache:/go/pkg/mod
+    working_dir: /app
+    profiles:
+      - tools
+
+volumes:
+  gomodcache:
