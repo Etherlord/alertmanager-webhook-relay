@@ -19,7 +19,7 @@ services:
       - tools
 
   migrate:
-    image: ghcr.io/pressly/goose:latest
+    image: ghcr.io/pressly/goose:3.27.0
     volumes:
       - ./migrations/sqlite:/migrations
       - ./data:/data

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"alertmanager-webhook-relay/internal/alerts"
+	"alertmanager-webhook-relay/internal/testutil"
 
-	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,16 +26,8 @@ func newTestStore(t *testing.T) *Store {
 	db, err := sql.Open("sqlite", ":memory:")
 	require.NoError(t, err)
 
-	// PRAGMAs — same as production New().
-	_, err = db.ExecContext(context.Background(), "PRAGMA journal_mode=WAL")
-	require.NoError(t, err)
-	_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys=ON")
-	require.NoError(t, err)
-
-	// Apply migrations via goose.
-	goose.SetLogger(goose.NopLogger())
-	require.NoError(t, goose.SetDialect("sqlite3"))
-	require.NoError(t, goose.Up(db, "../../../migrations/sqlite"))
+	require.NoError(t, ConfigurePragmas(context.Background(), db))
+	testutil.ApplyMigrations(t, db, "../../../migrations/sqlite")
 
 	store := &Store{db: db, logger: testLogger()}
 	t.Cleanup(func() { store.Close() })

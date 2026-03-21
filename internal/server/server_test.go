@@ -14,8 +14,8 @@ import (
 	"alertmanager-webhook-relay/internal/logging"
 	"alertmanager-webhook-relay/internal/server"
 	"alertmanager-webhook-relay/internal/storage/sqlite"
+	"alertmanager-webhook-relay/internal/testutil"
 
-	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -163,9 +163,7 @@ func TestServer_AlertWebhookRoute(t *testing.T) {
 
 	db, err := sql.Open("sqlite", dbPath)
 	require.NoError(t, err)
-	goose.SetLogger(goose.NopLogger())
-	require.NoError(t, goose.SetDialect("sqlite3"))
-	require.NoError(t, goose.Up(db, "../../migrations/sqlite"))
+	testutil.ApplyMigrations(t, db, "../../migrations/sqlite")
 	require.NoError(t, db.Close())
 
 	store, err := sqlite.New(dbPath, logger)

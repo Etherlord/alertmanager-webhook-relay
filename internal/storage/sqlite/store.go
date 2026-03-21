@@ -19,6 +19,17 @@ type Store struct {
 	logger *slog.Logger
 }
 
+// ConfigurePragmas enables WAL mode and foreign key constraints on a SQLite connection.
+func ConfigurePragmas(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
+		return fmt.Errorf("sqlite enable WAL: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
+		return fmt.Errorf("sqlite enable foreign keys: %w", err)
+	}
+	return nil
+}
+
 // New creates a new SQLite store, enables WAL mode and foreign keys.
 // Migrations must be applied externally (goose) before calling New.
 func New(dsn string, logger *slog.Logger) (*Store, error) {
@@ -29,17 +40,10 @@ func New(dsn string, logger *slog.Logger) (*Store, error) {
 		return nil, fmt.Errorf("sqlite open: %w", err)
 	}
 
-	// Enable WAL mode for concurrent reads.
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
+	if err := ConfigurePragmas(ctx, db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("sqlite enable WAL: %w", err)
-	}
-
-	// Enable foreign key constraints.
-	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("sqlite enable foreign keys: %w", err)
+		return nil, err
 	}
 
 	logger.Debug("SQLite pragmas set", "journal_mode", "WAL", "foreign_keys", "ON")
