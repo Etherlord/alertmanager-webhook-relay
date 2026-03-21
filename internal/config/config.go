@@ -20,6 +20,8 @@ const (
 
 	minMaxAlertsPerPayload = 1
 	maxMaxAlertsPerPayload = 1000
+
+	maxDSNLen = 2048
 )
 
 var validLogLevels = map[string]struct{}{
@@ -134,7 +136,7 @@ func (c *Config) normalize() {
 		c.DatabaseDriver = trimmed
 	}
 	if trimmed := strings.TrimSpace(c.DatabaseDSN); trimmed != c.DatabaseDSN {
-		slog.Debug("нормализация: DATABASE_DSN", "до", c.DatabaseDSN, "после", trimmed)
+		slog.Debug("нормализация: DATABASE_DSN", "действие", "TrimSpace")
 		c.DatabaseDSN = trimmed
 	}
 }
@@ -156,9 +158,20 @@ func (c *Config) validate() error {
 		return fmt.Errorf("DATABASE_DRIVER=%q должен быть sqlite: %w", c.DatabaseDriver, ErrInvalidConfig)
 	}
 
-	// 4. Non-empty string (DatabaseDSN)
+	// 4. Arbitrary string (DatabaseDSN): empty → length → control chars → dangerous sequences
 	if c.DatabaseDSN == "" {
 		return fmt.Errorf("DATABASE_DSN не может быть пустым: %w", ErrInvalidConfig)
+	}
+	if len(c.DatabaseDSN) > maxDSNLen {
+		return fmt.Errorf("DATABASE_DSN длиной %d превышает максимум %d: %w",
+			len(c.DatabaseDSN), maxDSNLen, ErrInvalidConfig)
+	}
+	if containsControlChars(c.DatabaseDSN) {
+		return fmt.Errorf("DATABASE_DSN содержит управляющие символы: %w", ErrInvalidConfig)
+	}
+	if found, desc := containsDangerousSequence(c.DatabaseDSN); found {
+		slog.Debug("DATABASE_DSN содержит опасную последовательность", "тип", desc)
+		return fmt.Errorf("DATABASE_DSN содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
 	}
 
 	// 5. Numeric range (MaxPayloadSize)
@@ -184,6 +197,62 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// containsControlChars reports whether s contains ASCII control characters
+// (bytes < 0x20 or 0x7F).
+func containsControlChars(s string) bool {
+	for i := range len(s) {
+		b := s[i]
+		if b < 0x20 || b == 0x7F {
+			return true
+		}
+	}
+	return false
+}
+
+// dangerousPatterns maps human-readable descriptions to patterns that indicate
+// injection attempts in arbitrary string values like DSN.
+var dangerousPatterns = []struct {
+	description string
+	pattern     string
+}{
+	{"CRLF", "\r\n"},
+	{"CR", "\r"},
+	{"null byte", "\x00"},
+	{"ANSI escape", "\x1b["},
+	{"shell expansion", "$("},
+	{"shell expansion", "`"},
+	{"template injection", "{{"},
+}
+
+// urlEncodedDangerous maps URL-encoded sequences to their descriptions.
+var urlEncodedDangerous = []struct {
+	description string
+	pattern     string
+}{
+	{"URL-encoded dangerous sequence", "%00"},
+	{"URL-encoded dangerous sequence", "%0d%0a"},
+	{"URL-encoded dangerous sequence", "%0a"},
+	{"URL-encoded dangerous sequence", "%0d"},
+}
+
+// containsDangerousSequence checks s for known dangerous byte sequences
+// including raw and URL-encoded variants. Returns true and a human-readable
+// description if found.
+func containsDangerousSequence(s string) (found bool, description string) {
+	for _, p := range dangerousPatterns {
+		if strings.Contains(s, p.pattern) {
+			return true, p.description
+		}
+	}
+	lower := strings.ToLower(s)
+	for _, p := range urlEncodedDangerous {
+		if strings.Contains(lower, p.pattern) {
+			return true, p.description
+		}
+	}
+	return false, ""
+}
+
 // SlogLevel converts the LogLevel string to a slog.Level.
 func (c *Config) SlogLevel() slog.Level {
 	switch c.LogLevel {
@@ -205,7 +274,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("log_level", c.LogLevel),
 		slog.String("shutdown_timeout", c.ShutdownTimeout.String()),
 		slog.String("database_driver", c.DatabaseDriver),
-		slog.String("database_dsn", c.DatabaseDSN),
+		slog.String("database_dsn", "[REDACTED]"),
 		slog.Int("max_payload_size", c.MaxPayloadSize),
 		slog.Int("max_alerts_per_payload", c.MaxAlertsPerPayload),
 	)

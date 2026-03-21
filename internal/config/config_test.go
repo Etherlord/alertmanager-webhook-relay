@@ -165,15 +165,63 @@ func TestLoad_InvalidDatabaseDriver(t *testing.T) {
 }
 
 func TestLoad_InvalidDatabaseDSN(t *testing.T) {
-	setDefaults(t)
-	// Whitespace-only is normalized to empty, which should fail validation.
-	t.Setenv("DATABASE_DSN", "   ")
+	tests := []struct {
+		name        string
+		value       string
+		errContains string
+	}{
+		{"whitespace only", "   ", "не может быть пустым"},
+		{"too long", strings.Repeat("a", 2049), "превышает максимум"},
+		{"control chars tab", "data\t.db", "содержит управляющие символы"},
+		{"shell expansion", "$(whoami).db", "опасную последовательность"},
+		{"template injection", "data{{.Foo}}.db", "опасную последовательность"},
+		{"backtick injection", "data`id`.db", "опасную последовательность"},
+		{"CRLF injection", "data\r\n.db", "содержит управляющие символы"},
+		{"URL-encoded null", "data%00.db", "опасную последовательность"},
+		{"URL-encoded CRLF", "data%0d%0a.db", "опасную последовательность"},
+		{"ANSI escape", "data\x1b[31m.db", "содержит управляющие символы"},
+	}
 
-	cfg, err := Load()
-	assert.Nil(t, cfg)
-	assert.ErrorIs(t, err, ErrInvalidConfig)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("DATABASE_DSN", tt.value)
 
-	t.Logf("DATABASE_DSN='   ' → error: %v", err)
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+
+			t.Logf("DATABASE_DSN=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_ValidDatabaseDSN(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"simple path", "data/alerts.db"},
+		{"absolute path", "/var/lib/app/data.db"},
+		{"postgres DSN", "postgres://user:pass@localhost:5432/db?sslmode=disable"},
+		{"max length", strings.Repeat("a", 2048)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("DATABASE_DSN", tt.value)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			assert.Equal(t, tt.value, cfg.DatabaseDSN)
+
+			t.Logf("DATABASE_DSN=%q → ok", tt.value)
+		})
+	}
 }
 
 func TestLoad_InvalidMaxPayloadSize(t *testing.T) {
@@ -399,7 +447,8 @@ func TestConfig_LogValue(t *testing.T) {
 	assert.Contains(t, str, "warn")
 	assert.Contains(t, str, "30s")
 	assert.Contains(t, str, "sqlite")
-	assert.Contains(t, str, "/tmp/test.db")
+	assert.Contains(t, str, "[REDACTED]")
+	assert.NotContains(t, str, "/tmp/test.db")
 	assert.Contains(t, str, "2097152")
 	assert.Contains(t, str, "50")
 
@@ -414,4 +463,89 @@ func TestConfig_LogValue(t *testing.T) {
 	assert.Contains(t, output, "9090")
 	assert.Contains(t, output, "warn")
 	assert.Contains(t, output, "sqlite")
+	assert.Contains(t, output, "[REDACTED]")
+	assert.NotContains(t, output, "/tmp/test.db")
+}
+
+func TestContainsControlChars(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"clean string", "/tmp/test.db", false},
+		{"empty string", "", false},
+		{"with path separators", "host=localhost dbname=test", false},
+		{"printable special chars", "postgres://user:p@ss!#$/db", false},
+		{"null byte", "data\x00.db", true},
+		{"tab", "data\t.db", true},
+		{"newline", "data\n.db", true},
+		{"carriage return", "data\r.db", true},
+		{"bell", "data\a.db", true},
+		{"backspace", "data\b.db", true},
+		{"escape", "data\x1b.db", true},
+		{"DEL (0x7F)", "data\x7f.db", true},
+		{"control char at start", "\x01data.db", true},
+		{"control char at end", "data.db\x02", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := containsControlChars(tt.input)
+			assert.Equal(t, tt.expected, result)
+
+			t.Logf("containsControlChars(%q) = %v", tt.input, result)
+		})
+	}
+}
+
+func TestContainsDangerousSequence(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectFound bool
+		expectDesc  string
+	}{
+		{"clean DSN", "data/alerts.db", false, ""},
+		{"postgres DSN", "postgres://user:pass@localhost:5432/db?sslmode=disable", false, ""},
+		{"sqlite path", "/var/lib/app/data.db", false, ""},
+
+		// CRLF injection
+		{"CRLF", "data\r\n.db", true, "CRLF"},
+		{"lone CR", "data\r.db", true, "CR"},
+
+		// Null byte
+		{"null byte", "data\x00.db", true, "null byte"},
+
+		// ANSI escape
+		{"ANSI escape", "data\x1b[31m.db", true, "ANSI escape"},
+
+		// Shell expansion
+		{"shell backtick", "$(whoami).db", true, "shell expansion"},
+		{"shell dollar paren", "data`id`.db", true, "shell expansion"},
+
+		// Template injection
+		{"Go template", "data{{.Foo}}.db", true, "template injection"},
+
+		// URL-encoded variants
+		{"URL-encoded null", "data%00.db", true, "URL-encoded dangerous sequence"},
+		{"URL-encoded CRLF", "data%0d%0a.db", true, "URL-encoded dangerous sequence"},
+		{"URL-encoded newline", "data%0a.db", true, "URL-encoded dangerous sequence"},
+		{"URL-encoded CR", "data%0d.db", true, "URL-encoded dangerous sequence"},
+
+		// Normal percent signs should not trigger
+		{"percent in password", "postgres://user:100%25safe@host/db", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			found, desc := containsDangerousSequence(tt.input)
+			assert.Equal(t, tt.expectFound, found)
+			if tt.expectFound {
+				assert.Contains(t, desc, tt.expectDesc)
+			}
+
+			t.Logf("containsDangerousSequence(%q) = (%v, %q)", tt.input, found, desc)
+		})
+	}
 }
