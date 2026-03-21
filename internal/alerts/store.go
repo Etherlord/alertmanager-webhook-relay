@@ -21,7 +21,10 @@ type Store interface {
 	// ordered by received_at ASC (oldest first).
 	GetPending(ctx context.Context, limit int) ([]AlertGroup, error)
 
-	// MarkSent marks an alert group as sent by its ID.
-	// Returns ErrNotFound if the ID does not exist.
-	MarkSent(ctx context.Context, id string) error
+	// MarkSent marks an alert group as sent by its group key.
+	// Returns ErrNotFound if the group key does not exist.
+	MarkSent(ctx context.Context, groupKey string) error
+
+	// Close releases resources held by the store.
+	Close() error
 }

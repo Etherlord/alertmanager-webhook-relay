@@ -4,28 +4,26 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	"alertmanager-webhook-relay/internal/alerts"
+	sqlitemigrations "alertmanager-webhook-relay/migrations/sqlite"
 
 	_ "modernc.org/sqlite"
 )
 
-//go:embed migrations/*.sql
-var migrations embed.FS
-
 // Store implements alerts.Store and server.Checker using SQLite (modernc.org/sqlite, pure Go).
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	logger *slog.Logger
 }
 
 // New creates a new SQLite store, enables WAL mode and foreign keys,
 // and runs embedded migrations.
-func New(dsn string) (*Store, error) {
-	slog.Debug("opening SQLite database", "dsn", dsn)
+func New(dsn string, logger *slog.Logger) (*Store, error) {
+	logger.Debug("opening SQLite database", "dsn", dsn)
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -45,23 +43,23 @@ func New(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("sqlite enable foreign keys: %w", err)
 	}
 
-	slog.Debug("SQLite pragmas set", "journal_mode", "WAL", "foreign_keys", "ON")
+	logger.Debug("SQLite pragmas set", "journal_mode", "WAL", "foreign_keys", "ON")
 
-	s := &Store{db: db}
+	s := &Store{db: db, logger: logger}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
 	}
 
-	slog.Info("SQLite store initialized", "dsn", dsn)
+	logger.Info("SQLite store initialized", "dsn", dsn)
 	return s, nil
 }
 
 // migrate runs embedded SQL migration files.
 func (s *Store) migrate() error {
-	slog.Debug("running SQLite migrations")
+	s.logger.Debug("running SQLite migrations")
 
-	entries, err := migrations.ReadDir("migrations")
+	entries, err := sqlitemigrations.FS.ReadDir(".")
 	if err != nil {
 		return fmt.Errorf("sqlite read migrations dir: %w", err)
 	}
@@ -71,25 +69,25 @@ func (s *Store) migrate() error {
 			continue
 		}
 
-		data, err := migrations.ReadFile("migrations/" + entry.Name())
+		data, err := sqlitemigrations.FS.ReadFile(entry.Name())
 		if err != nil {
 			return fmt.Errorf("sqlite read migration %s: %w", entry.Name(), err)
 		}
 
-		slog.Debug("applying migration", "file", entry.Name())
+		s.logger.Debug("applying migration", "file", entry.Name())
 
 		if _, err := s.db.ExecContext(context.Background(), string(data)); err != nil {
 			return fmt.Errorf("sqlite apply migration %s: %w", entry.Name(), err)
 		}
 	}
 
-	slog.Debug("SQLite migrations complete")
+	s.logger.Debug("SQLite migrations complete")
 	return nil
 }
 
 // Save persists an alert group. Idempotent — upserts by GroupKey.
 func (s *Store) Save(ctx context.Context, group *alerts.AlertGroup) error {
-	slog.Debug("saving alert group", "group_key", group.GroupKey, "alerts_count", len(group.Alerts))
+	s.logger.Debug("saving alert group", "group_key", group.GroupKey, "alerts_count", len(group.Alerts))
 
 	payload, err := json.Marshal(group)
 	if err != nil {
@@ -120,7 +118,7 @@ func (s *Store) Save(ctx context.Context, group *alerts.AlertGroup) error {
 		return fmt.Errorf("sqlite upsert alert_group: %w", err)
 	}
 
-	slog.Debug("upserted alert group", "id", id, "group_key", group.GroupKey)
+	s.logger.Debug("upserted alert group", "id", id, "group_key", group.GroupKey)
 
 	// Delete old alerts for this group (on upsert, replace them).
 	if _, err := tx.ExecContext(ctx, "DELETE FROM alerts WHERE alert_group_id = ?", id); err != nil {
@@ -140,8 +138,8 @@ func (s *Store) Save(ctx context.Context, group *alerts.AlertGroup) error {
 	for i, a := range group.Alerts {
 		var endsAt *string
 		if !a.EndsAt.IsZero() {
-			s := a.EndsAt.UTC().Format("2006-01-02T15:04:05Z")
-			endsAt = &s
+			formatted := a.EndsAt.UTC().Format("2006-01-02T15:04:05Z")
+			endsAt = &formatted
 		}
 
 		_, err := stmt.ExecContext(ctx,
@@ -162,13 +160,13 @@ func (s *Store) Save(ctx context.Context, group *alerts.AlertGroup) error {
 		return fmt.Errorf("sqlite commit: %w", err)
 	}
 
-	slog.Debug("alert group saved", "id", id, "group_key", group.GroupKey, "alerts_count", len(group.Alerts))
+	s.logger.Debug("alert group saved", "id", id, "group_key", group.GroupKey, "alerts_count", len(group.Alerts))
 	return nil
 }
 
 // GetPending returns up to limit alert groups with notification_status='pending'.
 func (s *Store) GetPending(ctx context.Context, limit int) ([]alerts.AlertGroup, error) {
-	slog.Debug("getting pending alert groups", "limit", limit)
+	s.logger.Debug("getting pending alert groups", "limit", limit)
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT group_key, payload
@@ -201,14 +199,14 @@ func (s *Store) GetPending(ctx context.Context, limit int) ([]alerts.AlertGroup,
 		return nil, fmt.Errorf("sqlite rows iteration: %w", err)
 	}
 
-	slog.Debug("pending alert groups retrieved", "count", len(groups))
+	s.logger.Debug("pending alert groups retrieved", "count", len(groups))
 	return groups, nil
 }
 
 // MarkSent marks an alert group as sent by its group_key.
 // Returns alerts.ErrNotFound if the group_key does not exist.
 func (s *Store) MarkSent(ctx context.Context, groupKey string) error {
-	slog.Debug("marking alert group as sent", "group_key", groupKey)
+	s.logger.Debug("marking alert group as sent", "group_key", groupKey)
 
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE alert_groups SET notification_status = 'sent' WHERE group_key = ?
@@ -226,7 +224,7 @@ func (s *Store) MarkSent(ctx context.Context, groupKey string) error {
 		return fmt.Errorf("group_key=%q: %w", groupKey, alerts.ErrNotFound)
 	}
 
-	slog.Debug("alert group marked as sent", "group_key", groupKey)
+	s.logger.Debug("alert group marked as sent", "group_key", groupKey)
 	return nil
 }
 
@@ -242,6 +240,6 @@ func (s *Store) Check(ctx context.Context) error {
 
 // Close closes the database connection.
 func (s *Store) Close() error {
-	slog.Debug("closing SQLite store")
+	s.logger.Debug("closing SQLite store")
 	return s.db.Close()
 }

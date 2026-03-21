@@ -134,13 +134,13 @@ func TestAlertGroup_MarshalJSON_RoundTrip(t *testing.T) {
 		Status:   StatusFiring,
 		Alerts: []Alert{
 			{
-				Status:      StatusFiring,
-				Labels:      map[string]string{"alertname": "TestAlert", "severity": "critical"},
-				Annotations: map[string]string{"summary": "test"},
-				StartsAt:    time.Date(2026, 3, 16, 8, 0, 0, 0, time.UTC),
-				EndsAt:      time.Time{},
+				Status:       StatusFiring,
+				Labels:       map[string]string{"alertname": "TestAlert", "severity": "critical"},
+				Annotations:  map[string]string{"summary": "test"},
+				StartsAt:     time.Date(2026, 3, 16, 8, 0, 0, 0, time.UTC),
+				EndsAt:       time.Time{},
 				GeneratorURL: "http://example.com",
-				Fingerprint: "abc123",
+				Fingerprint:  "abc123",
 			},
 		},
 		GroupLabels:       map[string]string{"alertname": "TestAlert"},
@@ -148,7 +148,7 @@ func TestAlertGroup_MarshalJSON_RoundTrip(t *testing.T) {
 		CommonAnnotations: map[string]string{"summary": "test"},
 		ExternalURL:       "http://alertmanager:9093",
 		Version:           "4",
-		GroupKey:           "test-group-key",
+		GroupKey:          "test-group-key",
 		TruncatedAlerts:   0,
 	}
 

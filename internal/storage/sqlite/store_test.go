@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -12,9 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	store, err := New(":memory:")
+	store, err := New(":memory:", testLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 	return store
@@ -43,7 +49,7 @@ func testGroup(groupKey string) alerts.AlertGroup {
 		CommonAnnotations: map[string]string{"summary": "test alert"},
 		ExternalURL:       "http://alertmanager:9093",
 		Version:           "4",
-		GroupKey:           groupKey,
+		GroupKey:          groupKey,
 	}
 }
 

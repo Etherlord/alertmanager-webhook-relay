@@ -28,15 +28,98 @@ func validGroup() AlertGroup {
 		CommonAnnotations: map[string]string{},
 		ExternalURL:       "http://alertmanager:9093",
 		Version:           "4",
-		GroupKey:           "test-key",
+		GroupKey:          "test-key",
 	}
 }
 
 func TestValidatePayload_Valid(t *testing.T) {
 	group := validGroup()
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.NoError(t, err)
 	t.Log("valid payload passed validation")
+}
+
+func TestValidatePayload_EmptyGroupKey(t *testing.T) {
+	group := validGroup()
+	group.GroupKey = ""
+
+	err := ValidatePayload(&group, 100)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidPayload)
+	assert.Contains(t, err.Error(), "groupKey")
+
+	t.Logf("empty groupKey → error: %v", err)
+}
+
+func TestValidatePayload_EmptyReceiver(t *testing.T) {
+	group := validGroup()
+	group.Receiver = ""
+
+	err := ValidatePayload(&group, 100)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidPayload)
+	assert.Contains(t, err.Error(), "receiver")
+
+	t.Logf("empty receiver → error: %v", err)
+}
+
+func TestValidatePayload_EmptyGroupStatus(t *testing.T) {
+	group := validGroup()
+	group.Status = ""
+
+	err := ValidatePayload(&group, 100)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidPayload)
+	assert.Contains(t, err.Error(), "status")
+
+	t.Logf("empty group status → error: %v", err)
+}
+
+func TestValidatePayload_InvalidGroupStatus(t *testing.T) {
+	group := validGroup()
+	group.Status = "unknown"
+
+	err := ValidatePayload(&group, 100)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidPayload)
+	assert.Contains(t, err.Error(), "status")
+
+	t.Logf("invalid group status → error: %v", err)
+}
+
+func TestValidatePayload_GroupStringLengthLimits(t *testing.T) {
+	longString := strings.Repeat("x", maxStringLength+1)
+
+	tests := []struct {
+		name  string
+		setup func(g *AlertGroup)
+	}{
+		{
+			name:  "long groupKey",
+			setup: func(g *AlertGroup) { g.GroupKey = longString },
+		},
+		{
+			name:  "long receiver",
+			setup: func(g *AlertGroup) { g.Receiver = longString },
+		},
+		{
+			name:  "long externalURL",
+			setup: func(g *AlertGroup) { g.ExternalURL = longString },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			group := validGroup()
+			tt.setup(&group)
+
+			err := ValidatePayload(&group, 100)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrPayloadTooLarge)
+
+			t.Logf("%s → error: %v", tt.name, err)
+		})
+	}
 }
 
 func TestValidatePayload_InvalidVersion(t *testing.T) {
@@ -54,7 +137,7 @@ func TestValidatePayload_InvalidVersion(t *testing.T) {
 			group := validGroup()
 			group.Version = tt.version
 
-			err := ValidatePayload(&group,100)
+			err := ValidatePayload(&group, 100)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrInvalidPayload)
 			assert.Contains(t, err.Error(), "version")
@@ -68,7 +151,7 @@ func TestValidatePayload_EmptyAlerts(t *testing.T) {
 	group := validGroup()
 	group.Alerts = nil
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidPayload)
 	assert.Contains(t, err.Error(), "alerts")
@@ -87,7 +170,7 @@ func TestValidatePayload_TooManyAlerts(t *testing.T) {
 		}
 	}
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPayloadTooLarge)
 	assert.Contains(t, err.Error(), "101")
@@ -106,7 +189,7 @@ func TestValidatePayload_MaxAlertsEdge(t *testing.T) {
 		}
 	}
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.NoError(t, err)
 	t.Log("exactly maxAlerts=100 alerts passed validation")
 }
@@ -115,7 +198,7 @@ func TestValidatePayload_MissingFingerprint(t *testing.T) {
 	group := validGroup()
 	group.Alerts[0].Fingerprint = ""
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidPayload)
 	assert.Contains(t, err.Error(), "fingerprint")
@@ -127,7 +210,7 @@ func TestValidatePayload_MissingStatus(t *testing.T) {
 	group := validGroup()
 	group.Alerts[0].Status = ""
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidPayload)
 	assert.Contains(t, err.Error(), "status")
@@ -139,7 +222,7 @@ func TestValidatePayload_MissingAlertname(t *testing.T) {
 	group := validGroup()
 	group.Alerts[0].Labels = map[string]string{"severity": "warning"}
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidPayload)
 	assert.Contains(t, err.Error(), "alertname")
@@ -151,7 +234,7 @@ func TestValidatePayload_InvalidAlertStatus(t *testing.T) {
 	group := validGroup()
 	group.Alerts[0].Status = "unknown"
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidPayload)
 	assert.Contains(t, err.Error(), "status")
@@ -209,7 +292,7 @@ func TestValidatePayload_StringLengthLimits(t *testing.T) {
 			group := validGroup()
 			tt.setup(&group)
 
-			err := ValidatePayload(&group,100)
+			err := ValidatePayload(&group, 100)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrPayloadTooLarge)
 
@@ -226,7 +309,7 @@ func TestValidatePayload_MultipleAlerts_SecondInvalid(t *testing.T) {
 		Fingerprint: "fp2",
 	})
 
-	err := ValidatePayload(&group,100)
+	err := ValidatePayload(&group, 100)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidPayload)
 	assert.Contains(t, err.Error(), "alerts[1]")

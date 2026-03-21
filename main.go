@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -33,11 +34,22 @@ func run() error {
 
 	logger.Info("starting alertmanager-webhook-relay", "config", cfg)
 
-	// Initialize SQLite store.
-	store, err := sqlite.New(cfg.DatabaseDSN)
-	if err != nil {
-		return err
+	// Initialize store based on configured driver.
+	var store alerts.Store
+	var storeChecker server.Checker
+
+	switch cfg.DatabaseDriver {
+	case "sqlite":
+		s, err := sqlite.New(cfg.DatabaseDSN, logger)
+		if err != nil {
+			return err
+		}
+		store = s
+		storeChecker = s
+	default:
+		return fmt.Errorf("unsupported database driver: %s", cfg.DatabaseDriver)
 	}
+
 	logger.Info("database initialized", "driver", cfg.DatabaseDriver, "dsn", cfg.DatabaseDSN)
 
 	// Build alert service and handler.
@@ -54,7 +66,7 @@ func run() error {
 		},
 		logger,
 		alertHandler,
-		store, // SQLite store implements server.Checker
+		storeChecker,
 	)
 
 	errCh := make(chan error, 1)
@@ -66,7 +78,9 @@ func run() error {
 
 	select {
 	case err := <-errCh:
-		store.Close()
+		if closeErr := store.Close(); closeErr != nil {
+			logger.Error("failed to close store", "error", closeErr)
+		}
 		return err
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
@@ -77,11 +91,17 @@ func run() error {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", "error", err)
-		store.Close()
+		if closeErr := store.Close(); closeErr != nil {
+			logger.Error("failed to close store", "error", closeErr)
+		}
 		return err
 	}
 
-	store.Close()
+	if err := store.Close(); err != nil {
+		logger.Error("failed to close store", "error", err)
+		return err
+	}
+
 	logger.Info("shutdown complete")
 
 	return nil

@@ -153,7 +153,7 @@ func TestServer_AlertWebhookRoute(t *testing.T) {
 		ShutdownTimeout: 5 * time.Second,
 	}
 
-	store, err := sqlite.New(":memory:")
+	store, err := sqlite.New(":memory:", logger)
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 

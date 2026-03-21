@@ -16,7 +16,7 @@ import (
 type mockStore struct {
 	saveFunc       func(ctx context.Context, group *AlertGroup) error
 	getPendingFunc func(ctx context.Context, limit int) ([]AlertGroup, error)
-	markSentFunc   func(ctx context.Context, id string) error
+	markSentFunc   func(ctx context.Context, groupKey string) error
 }
 
 func (m *mockStore) Save(ctx context.Context, group *AlertGroup) error {
@@ -33,10 +33,14 @@ func (m *mockStore) GetPending(ctx context.Context, limit int) ([]AlertGroup, er
 	return nil, nil
 }
 
-func (m *mockStore) MarkSent(ctx context.Context, id string) error {
+func (m *mockStore) MarkSent(ctx context.Context, groupKey string) error {
 	if m.markSentFunc != nil {
-		return m.markSentFunc(ctx, id)
+		return m.markSentFunc(ctx, groupKey)
 	}
+	return nil
+}
+
+func (m *mockStore) Close() error {
 	return nil
 }
 

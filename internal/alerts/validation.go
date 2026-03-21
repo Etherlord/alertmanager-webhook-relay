@@ -24,6 +24,33 @@ var (
 // ValidatePayload validates an AlertGroup received from Alertmanager webhook.
 // maxAlerts limits the number of alerts per payload (DoS protection).
 func ValidatePayload(group *AlertGroup, maxAlerts int) error {
+	if group.GroupKey == "" {
+		return fmt.Errorf("groupKey must be set: %w", ErrInvalidPayload)
+	}
+
+	if group.Receiver == "" {
+		return fmt.Errorf("receiver must be set: %w", ErrInvalidPayload)
+	}
+
+	if group.Status == "" {
+		return fmt.Errorf("group status must be set: %w", ErrInvalidPayload)
+	}
+
+	if group.Status != StatusFiring && group.Status != StatusResolved {
+		return fmt.Errorf("invalid group status=%q, expected firing/resolved: %w",
+			group.Status, ErrInvalidPayload)
+	}
+
+	if err := validateStringLength("groupKey", group.GroupKey); err != nil {
+		return err
+	}
+	if err := validateStringLength("receiver", group.Receiver); err != nil {
+		return err
+	}
+	if err := validateStringLength("externalURL", group.ExternalURL); err != nil {
+		return err
+	}
+
 	if group.Version != "4" {
 		return fmt.Errorf("unsupported version=%q, expected \"4\": %w", group.Version, ErrInvalidPayload)
 	}

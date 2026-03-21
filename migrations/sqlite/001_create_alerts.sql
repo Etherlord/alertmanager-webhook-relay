@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS alert_groups (
 
 CREATE TABLE IF NOT EXISTS alerts (
     id             TEXT PRIMARY KEY,
-    alert_group_id TEXT NOT NULL REFERENCES alert_groups(id),
+    alert_group_id TEXT NOT NULL REFERENCES alert_groups(id) ON DELETE CASCADE,
     fingerprint    TEXT NOT NULL,
     status         TEXT NOT NULL,
     alertname      TEXT NOT NULL,

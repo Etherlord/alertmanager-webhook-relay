@@ -38,4 +38,3 @@ func httpPost(t *testing.T, url string, body []byte) *http.Response {
 	}
 	return resp
 }
-

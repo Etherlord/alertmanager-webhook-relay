@@ -261,11 +261,11 @@ func TestLoad_ValidEdgeCases(t *testing.T) {
 
 func TestLoad_ValidEdgeCases_Database(t *testing.T) {
 	tests := []struct {
-		name           string
-		envKey         string
-		envValue       string
-		checkField     string
-		expectedInt    int
+		name        string
+		envKey      string
+		envValue    string
+		checkField  string
+		expectedInt int
 	}{
 		{"min MAX_PAYLOAD_SIZE", "MAX_PAYLOAD_SIZE", "1024", "MaxPayloadSize", 1024},
 		{"max MAX_PAYLOAD_SIZE", "MAX_PAYLOAD_SIZE", "10485760", "MaxPayloadSize", 10485760},
