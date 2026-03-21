@@ -7,6 +7,10 @@ services:
       - .:/app
       - gomodcache:/go/pkg/mod
     working_dir: /app
+    environment:
+      - PORT=${PORT:-8080}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SHUTDOWN_TIMEOUT=${SHUTDOWN_TIMEOUT:-15s}
     profiles:
       - tools
 

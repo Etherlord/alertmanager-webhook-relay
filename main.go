@@ -7,6 +7,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"alertmanager-webhook-relay/internal/config"
+	"alertmanager-webhook-relay/internal/logging"
 )
 
 func main() {
@@ -17,18 +20,22 @@ func main() {
 }
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	logger := logging.New(cfg.SlogLevel())
 	slog.SetDefault(logger)
 
-	logger.Info("starting alertmanager-webhook-relay")
+	logger.Info("starting alertmanager-webhook-relay", "config", cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop() // safe: os.Exit is called in main(), not in run()
 
 	<-ctx.Done()
 	logger.Info("shutdown signal received", "signal", ctx.Err())
+	logger.Info("shutdown complete")
 
 	return nil
 }
