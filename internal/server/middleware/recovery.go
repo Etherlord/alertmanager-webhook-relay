@@ -7,6 +7,12 @@ import (
 	"runtime/debug"
 )
 
+// statusResetter реализуется response writers, которые поддерживают
+// переопределение HTTP-статуса до отправки заголовков клиенту.
+type statusResetter interface {
+	ResetStatus(code int)
+}
+
 // Recovery возвращает middleware, который перехватывает panic,
 // логирует ошибку со стектрейсом и отвечает 500 Internal Server Error.
 func Recovery(logger *slog.Logger) Middleware {
@@ -34,6 +40,9 @@ func Recovery(logger *slog.Logger) Middleware {
 						"remote_addr", r.RemoteAddr,
 					)
 
+					if sr, ok := w.(statusResetter); ok {
+						sr.ResetStatus(http.StatusInternalServerError)
+					}
 					w.Header().Set("Content-Type", "text/plain")
 					w.WriteHeader(http.StatusInternalServerError)
 					_, _ = w.Write([]byte("Internal Server Error\n"))

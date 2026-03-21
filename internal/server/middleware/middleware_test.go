@@ -1,11 +1,14 @@
 package middleware_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"alertmanager-webhook-relay/internal/logging"
 	"alertmanager-webhook-relay/internal/server/middleware"
 
 	"github.com/stretchr/testify/assert"
@@ -86,4 +89,44 @@ func TestChain_SingleMiddleware(t *testing.T) {
 
 	require.True(t, called, "middleware should have been called")
 	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestChain_LoggingRecovery_PanicAfterWriteHeader(t *testing.T) {
+	var buf bytes.Buffer
+	logger := logging.NewWithWriter(slogDebug, &buf)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK) // статус установлен, но panic до Write
+		panic("crash after setting status")
+	})
+
+	chain := middleware.Chain(
+		middleware.Logging(logger),
+		middleware.Recovery(logger),
+	)
+	wrapped := chain(handler)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/partial", http.NoBody)
+	wrapped.ServeHTTP(rec, req)
+
+	// Recovery должен переопределить статус на 500.
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	// Должно быть две записи: "panic recovered" (Recovery) и "request completed" (Logging).
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	require.Len(t, lines, 2)
+
+	var requestEntry map[string]any
+	for _, line := range lines {
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal(line, &entry))
+		if entry["msg"] == "request completed" {
+			requestEntry = entry
+		}
+	}
+
+	// Logging должен залогировать 500, а не 200.
+	require.NotNil(t, requestEntry, "expected 'request completed' log entry")
+	assert.Equal(t, float64(http.StatusInternalServerError), requestEntry["status"])
 }
