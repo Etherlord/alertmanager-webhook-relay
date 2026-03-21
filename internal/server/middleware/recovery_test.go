@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -27,7 +28,7 @@ func TestRecovery_PanicString(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/boom", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
@@ -56,7 +57,7 @@ func TestRecovery_PanicError(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
@@ -78,7 +79,7 @@ func TestRecovery_PanicArbitrary(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
@@ -101,7 +102,7 @@ func TestRecovery_NoPanic(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)

@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,7 @@ func TestLogging_GET200(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", http.NoBody)
 	req.Header.Set("User-Agent", "kube-probe/1.28")
 	wrapped.ServeHTTP(rec, req)
 
@@ -60,7 +61,7 @@ func TestLogging_POST404(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/missing", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/missing", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
@@ -86,7 +87,7 @@ func TestLogging_DurationPositive(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	var logEntry map[string]any
@@ -110,7 +111,7 @@ func TestLogging_DefaultStatus200(t *testing.T) {
 	wrapped := mw(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	var logEntry map[string]any

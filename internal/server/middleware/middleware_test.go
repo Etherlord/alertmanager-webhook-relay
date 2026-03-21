@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,7 +40,7 @@ func TestChain_MultipleMiddlewares(t *testing.T) {
 	wrapped := chain(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/test", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	// Первый middleware — внешний, второй — внутренний.
@@ -56,7 +57,7 @@ func TestChain_Empty(t *testing.T) {
 	wrapped := chain(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusTeapot, rec.Code)
@@ -80,7 +81,7 @@ func TestChain_SingleMiddleware(t *testing.T) {
 	wrapped := chain(handler)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	wrapped.ServeHTTP(rec, req)
 
 	require.True(t, called, "middleware should have been called")
