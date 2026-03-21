@@ -25,6 +25,7 @@ type Server struct {
 	listener   net.Listener
 	logger     *slog.Logger
 	cfg        Config
+	ready      chan struct{} // закрывается после успешного Listen
 }
 
 // New создаёт новый Server с настроенными маршрутами и middleware.
@@ -50,6 +51,7 @@ func New(cfg Config, logger *slog.Logger, checkers ...Checker) *Server {
 		},
 		logger: logger,
 		cfg:    cfg,
+		ready:  make(chan struct{}),
 	}
 
 	return srv
@@ -69,6 +71,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	}
 	s.listener = ln
+	close(s.ready)
 
 	s.logger.Info("HTTP server listening", "addr", ln.Addr().String())
 
@@ -97,12 +100,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// Ready возвращает канал, который закрывается после успешного Listen.
+func (s *Server) Ready() <-chan struct{} {
+	return s.ready
+}
+
 // Addr возвращает адрес, на котором сервер слушает.
-// Возвращает пустую строку, если сервер ещё не запущен.
+// Безопасно вызывать только после закрытия Ready().
 func (s *Server) Addr() string {
 	if s.listener == nil {
 		return ""
 	}
 	return s.listener.Addr().String()
 }
-

@@ -23,8 +23,8 @@ type stubChecker struct {
 	err  error
 }
 
-func (c *stubChecker) Name() string                        { return c.name }
-func (c *stubChecker) Check(_ context.Context) error       { return c.err }
+func (c *stubChecker) Name() string                  { return c.name }
+func (c *stubChecker) Check(_ context.Context) error { return c.err }
 
 func newLogger(buf *bytes.Buffer) *slog.Logger {
 	return logging.NewWithWriter(slog.LevelDebug, buf)
@@ -37,7 +37,7 @@ func TestHealthz_Returns200(t *testing.T) {
 	handler := server.HandleHealthz(logger)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", http.NoBody)
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -55,7 +55,7 @@ func TestReadyz_NoCheckers(t *testing.T) {
 	handler := server.HandleReadyz(logger)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", http.NoBody)
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -78,7 +78,7 @@ func TestReadyz_AllCheckersOK(t *testing.T) {
 	handler := server.HandleReadyz(logger, checkers...)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", http.NoBody)
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -99,7 +99,7 @@ func TestReadyz_FailedChecker(t *testing.T) {
 	handler := server.HandleReadyz(logger, checkers...)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", http.NoBody)
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
@@ -135,7 +135,7 @@ func TestReadyz_MixedCheckers(t *testing.T) {
 	handler := server.HandleReadyz(logger, checkers...)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", http.NoBody)
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
