@@ -11,6 +11,10 @@ services:
       - PORT=${PORT:-8080}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - SHUTDOWN_TIMEOUT=${SHUTDOWN_TIMEOUT:-15s}
+      - DATABASE_DRIVER=${DATABASE_DRIVER:-sqlite}
+      - DATABASE_DSN=${DATABASE_DSN:-data/alerts.db}
+      - MAX_PAYLOAD_SIZE=${MAX_PAYLOAD_SIZE:-1048576}
+      - MAX_ALERTS_PER_PAYLOAD=${MAX_ALERTS_PER_PAYLOAD:-100}
     profiles:
       - tools
 
