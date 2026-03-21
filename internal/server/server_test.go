@@ -36,7 +36,10 @@ func TestServer_HealthzRoute(t *testing.T) {
 	srv := server.New(cfg, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+	})
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -65,7 +68,10 @@ func TestServer_ReadyzRoute(t *testing.T) {
 	srv := server.New(cfg, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+	})
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -91,7 +97,10 @@ func TestServer_ReadyzWithFailedChecker(t *testing.T) {
 	srv := server.New(cfg, logger, failChecker)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+	})
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -116,7 +125,10 @@ func TestServer_MiddlewareChainApplied(t *testing.T) {
 	srv := server.New(cfg, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+	})
 
 	errCh := make(chan error, 1)
 	go func() {

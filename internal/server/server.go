@@ -67,6 +67,7 @@ func (s *Server) Start(ctx context.Context) error {
 	lc := net.ListenConfig{}
 	ln, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
+		close(s.ready)
 		s.logger.Error("failed to listen", "addr", addr, "error", err)
 		return err
 	}
@@ -100,7 +101,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// Ready возвращает канал, который закрывается после успешного Listen.
+// Ready возвращает канал, который закрывается после завершения Listen (успешного или нет).
+// Если Listen завершился с ошибкой, Addr() вернёт пустую строку.
 func (s *Server) Ready() <-chan struct{} {
 	return s.ready
 }

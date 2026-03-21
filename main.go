@@ -3,9 +3,7 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -46,7 +44,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Start(ctx); err != nil {
 			errCh <- err
 		}
 	}()
