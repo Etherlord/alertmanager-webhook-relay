@@ -36,6 +36,10 @@ type Config struct {
 // Load reads configuration from environment variables, applies defaults,
 // normalizes values, and validates constraints. Returns nil and an error
 // wrapping ErrInvalidConfig on validation failure.
+//
+// NB: debug-логи внутри Load() используют default logger, который ещё не
+// настроен (chicken-and-egg). Они станут видны только если до вызова Load()
+// установить slog default на уровень Debug.
 func Load() (*Config, error) {
 	slog.Debug("loading configuration from environment")
 

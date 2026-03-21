@@ -34,7 +34,9 @@ func run() error {
 	defer stop() // safe: os.Exit is called in main(), not in run()
 
 	<-ctx.Done()
-	logger.Info("shutdown signal received", "signal", ctx.Err())
+	logger.Info("shutdown signal received")
+
+	// TODO: использовать cfg.ShutdownTimeout для graceful shutdown HTTP-сервера
 	logger.Info("shutdown complete")
 
 	return nil
