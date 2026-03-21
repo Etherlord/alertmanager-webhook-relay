@@ -9,7 +9,6 @@ import (
 	"log/slog"
 
 	"alertmanager-webhook-relay/internal/alerts"
-	sqlitemigrations "alertmanager-webhook-relay/migrations/sqlite"
 
 	_ "modernc.org/sqlite"
 )
@@ -20,8 +19,8 @@ type Store struct {
 	logger *slog.Logger
 }
 
-// New creates a new SQLite store, enables WAL mode and foreign keys,
-// and runs embedded migrations.
+// New creates a new SQLite store, enables WAL mode and foreign keys.
+// Migrations must be applied externally (goose) before calling New.
 func New(dsn string, logger *slog.Logger) (*Store, error) {
 	logger.Debug("opening SQLite database", "dsn", dsn)
 
@@ -46,43 +45,9 @@ func New(dsn string, logger *slog.Logger) (*Store, error) {
 	logger.Debug("SQLite pragmas set", "journal_mode", "WAL", "foreign_keys", "ON")
 
 	s := &Store{db: db, logger: logger}
-	if err := s.migrate(); err != nil {
-		db.Close()
-		return nil, err
-	}
 
 	logger.Info("SQLite store initialized", "dsn", dsn)
 	return s, nil
-}
-
-// migrate runs embedded SQL migration files.
-func (s *Store) migrate() error {
-	s.logger.Debug("running SQLite migrations")
-
-	entries, err := sqlitemigrations.FS.ReadDir(".")
-	if err != nil {
-		return fmt.Errorf("sqlite read migrations dir: %w", err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		data, err := sqlitemigrations.FS.ReadFile(entry.Name())
-		if err != nil {
-			return fmt.Errorf("sqlite read migration %s: %w", entry.Name(), err)
-		}
-
-		s.logger.Debug("applying migration", "file", entry.Name())
-
-		if _, err := s.db.ExecContext(context.Background(), string(data)); err != nil {
-			return fmt.Errorf("sqlite apply migration %s: %w", entry.Name(), err)
-		}
-	}
-
-	s.logger.Debug("SQLite migrations complete")
-	return nil
 }
 
 // Save persists an alert group. Idempotent — upserts by GroupKey.

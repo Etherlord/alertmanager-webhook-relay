@@ -2,9 +2,11 @@ package server_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,8 +15,11 @@ import (
 	"alertmanager-webhook-relay/internal/server"
 	"alertmanager-webhook-relay/internal/storage/sqlite"
 
+	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestNew_CreatesServer(t *testing.T) {
@@ -153,7 +158,17 @@ func TestServer_AlertWebhookRoute(t *testing.T) {
 		ShutdownTimeout: 5 * time.Second,
 	}
 
-	store, err := sqlite.New(":memory:", logger)
+	// Use file-based temp DB so goose and sqlite.New share the same database.
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	goose.SetLogger(goose.NopLogger())
+	require.NoError(t, goose.SetDialect("sqlite3"))
+	require.NoError(t, goose.Up(db, "../../migrations/sqlite"))
+	require.NoError(t, db.Close())
+
+	store, err := sqlite.New(dbPath, logger)
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 
