@@ -8,9 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"alertmanager-webhook-relay/internal/alerts"
 	"alertmanager-webhook-relay/internal/config"
 	"alertmanager-webhook-relay/internal/logging"
 	"alertmanager-webhook-relay/internal/server"
+	"alertmanager-webhook-relay/internal/storage/sqlite"
 )
 
 func main() {
@@ -31,6 +33,17 @@ func run() error {
 
 	logger.Info("starting alertmanager-webhook-relay", "config", cfg)
 
+	// Initialize SQLite store.
+	store, err := sqlite.New(cfg.DatabaseDSN)
+	if err != nil {
+		return err
+	}
+	logger.Info("database initialized", "driver", cfg.DatabaseDriver, "dsn", cfg.DatabaseDSN)
+
+	// Build alert service and handler.
+	alertSvc := alerts.NewService(store, logger, cfg.MaxAlertsPerPayload)
+	alertHandler := alerts.HandleWebhook(logger, alertSvc, int64(cfg.MaxPayloadSize))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop() // safe: os.Exit is called in main(), not in run()
 
@@ -40,6 +53,8 @@ func run() error {
 			ShutdownTimeout: cfg.ShutdownTimeout,
 		},
 		logger,
+		alertHandler,
+		store, // SQLite store implements server.Checker
 	)
 
 	errCh := make(chan error, 1)
@@ -51,6 +66,7 @@ func run() error {
 
 	select {
 	case err := <-errCh:
+		store.Close()
 		return err
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
@@ -61,9 +77,11 @@ func run() error {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", "error", err)
+		store.Close()
 		return err
 	}
 
+	store.Close()
 	logger.Info("shutdown complete")
 
 	return nil

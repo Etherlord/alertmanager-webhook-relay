@@ -23,7 +23,7 @@ var (
 
 // ValidatePayload validates an AlertGroup received from Alertmanager webhook.
 // maxAlerts limits the number of alerts per payload (DoS protection).
-func ValidatePayload(group AlertGroup, maxAlerts int) error {
+func ValidatePayload(group *AlertGroup, maxAlerts int) error {
 	if group.Version != "4" {
 		return fmt.Errorf("unsupported version=%q, expected \"4\": %w", group.Version, ErrInvalidPayload)
 	}
@@ -37,8 +37,8 @@ func ValidatePayload(group AlertGroup, maxAlerts int) error {
 			len(group.Alerts), maxAlerts, ErrPayloadTooLarge)
 	}
 
-	for i, alert := range group.Alerts {
-		if err := validateAlert(alert, i); err != nil {
+	for i := range group.Alerts {
+		if err := validateAlert(&group.Alerts[i], i); err != nil {
 			return err
 		}
 	}
@@ -47,7 +47,7 @@ func ValidatePayload(group AlertGroup, maxAlerts int) error {
 }
 
 // validateAlert checks required fields and string length limits for a single alert.
-func validateAlert(alert Alert, index int) error {
+func validateAlert(alert *Alert, index int) error {
 	prefix := fmt.Sprintf("alerts[%d]", index)
 
 	if alert.Fingerprint == "" {

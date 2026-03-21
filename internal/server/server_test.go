@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"alertmanager-webhook-relay/internal/alerts"
 	"alertmanager-webhook-relay/internal/logging"
 	"alertmanager-webhook-relay/internal/server"
+	"alertmanager-webhook-relay/internal/storage/sqlite"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +24,7 @@ func TestNew_CreatesServer(t *testing.T) {
 		ShutdownTimeout: 5 * time.Second,
 	}
 
-	srv := server.New(cfg, logger)
+	srv := server.New(cfg, logger, nil)
 	assert.NotNil(t, srv)
 }
 
@@ -33,7 +35,7 @@ func TestServer_HealthzRoute(t *testing.T) {
 		ShutdownTimeout: 5 * time.Second,
 	}
 
-	srv := server.New(cfg, logger)
+	srv := server.New(cfg, logger, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
@@ -65,7 +67,7 @@ func TestServer_ReadyzRoute(t *testing.T) {
 		ShutdownTimeout: 5 * time.Second,
 	}
 
-	srv := server.New(cfg, logger)
+	srv := server.New(cfg, logger, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
@@ -94,7 +96,7 @@ func TestServer_ReadyzWithFailedChecker(t *testing.T) {
 	}
 
 	failChecker := &stubChecker{name: "db", err: errors.New("down")}
-	srv := server.New(cfg, logger, failChecker)
+	srv := server.New(cfg, logger, nil, failChecker)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
@@ -122,7 +124,7 @@ func TestServer_MiddlewareChainApplied(t *testing.T) {
 		ShutdownTimeout: 5 * time.Second,
 	}
 
-	srv := server.New(cfg, logger)
+	srv := server.New(cfg, logger, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
@@ -144,6 +146,62 @@ func TestServer_MiddlewareChainApplied(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
+func TestServer_AlertWebhookRoute(t *testing.T) {
+	logger := logging.NewWithWriter(slogLevelDebug, io.Discard)
+	cfg := server.Config{
+		Port:            0,
+		ShutdownTimeout: 5 * time.Second,
+	}
+
+	store, err := sqlite.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	svc := alerts.NewService(store, logger, 100)
+	handler := alerts.HandleWebhook(logger, svc, 1<<20)
+	srv := server.New(cfg, logger, handler, store)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+	})
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.Start(ctx)
+	}()
+
+	<-srv.Ready()
+
+	payload := `{
+		"receiver": "webhook",
+		"status": "firing",
+		"alerts": [{
+			"status": "firing",
+			"labels": {"alertname": "TestAlert", "severity": "critical"},
+			"annotations": {"summary": "test"},
+			"startsAt": "2026-03-16T08:00:00Z",
+			"endsAt": "0001-01-01T00:00:00Z",
+			"generatorURL": "http://example.com",
+			"fingerprint": "abc123"
+		}],
+		"groupLabels": {"alertname": "TestAlert"},
+		"commonLabels": {"alertname": "TestAlert"},
+		"commonAnnotations": {},
+		"externalURL": "http://alertmanager:9093",
+		"version": "4",
+		"groupKey": "test-key",
+		"truncatedAlerts": 0
+	}`
+
+	resp := httpPost(t, "http://"+srv.Addr()+"/api/v1/alerts", []byte(payload))
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+}
+
 func TestServer_GracefulShutdown(t *testing.T) {
 	logger := logging.NewWithWriter(slogLevelDebug, io.Discard)
 	cfg := server.Config{
@@ -151,7 +209,7 @@ func TestServer_GracefulShutdown(t *testing.T) {
 		ShutdownTimeout: 5 * time.Second,
 	}
 
-	srv := server.New(cfg, logger)
+	srv := server.New(cfg, logger, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

@@ -15,7 +15,7 @@ type Store interface {
 	// Save persists an alert group. Idempotent — upserts by GroupKey
 	// (ON CONFLICT UPDATE). Subsequent calls with the same GroupKey
 	// update the existing record.
-	Save(ctx context.Context, group AlertGroup) error
+	Save(ctx context.Context, group *AlertGroup) error
 
 	// GetPending returns up to limit alert groups with notification_status='pending',
 	// ordered by received_at ASC (oldest first).

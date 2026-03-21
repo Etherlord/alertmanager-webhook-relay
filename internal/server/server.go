@@ -29,11 +29,17 @@ type Server struct {
 }
 
 // New создаёт новый Server с настроенными маршрутами и middleware.
-func New(cfg Config, logger *slog.Logger, checkers ...Checker) *Server {
+// alertHandler — обработчик POST /api/v1/alerts (nil если не нужен).
+func New(cfg Config, logger *slog.Logger, alertHandler http.Handler, checkers ...Checker) *Server {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /healthz", HandleHealthz(logger))
 	mux.Handle("GET /readyz", HandleReadyz(logger, checkers...))
+
+	if alertHandler != nil {
+		mux.Handle("POST /api/v1/alerts", alertHandler)
+		logger.Debug("registered alert webhook handler", "path", "POST /api/v1/alerts")
+	}
 
 	chain := middleware.Chain(
 		middleware.Logging(logger),

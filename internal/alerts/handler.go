@@ -11,7 +11,7 @@ import (
 
 // Receiver defines the interface for the alert service used by the handler.
 type Receiver interface {
-	Receive(ctx context.Context, group AlertGroup) error
+	Receive(ctx context.Context, group *AlertGroup) error
 }
 
 // HandleWebhook returns an http.HandlerFunc that accepts Alertmanager webhook payloads.
@@ -55,7 +55,7 @@ func HandleWebhook(logger *slog.Logger, svc Receiver, maxBodySize int64) http.Ha
 			"alerts_count", len(group.Alerts),
 		)
 
-		if err := svc.Receive(r.Context(), group); err != nil {
+		if err := svc.Receive(r.Context(), &group); err != nil {
 			switch {
 			case errors.Is(err, ErrInvalidPayload):
 				writeError(w, http.StatusBadRequest, err.Error())

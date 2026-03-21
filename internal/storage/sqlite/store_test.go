@@ -20,6 +20,11 @@ func newTestStore(t *testing.T) *Store {
 	return store
 }
 
+func ptrGroup(groupKey string) *alerts.AlertGroup {
+	g := testGroup(groupKey)
+	return &g
+}
+
 func testGroup(groupKey string) alerts.AlertGroup {
 	return alerts.AlertGroup{
 		Receiver: "webhook",
@@ -54,7 +59,7 @@ func TestStore_Save_RoundTrip(t *testing.T) {
 
 	group := testGroup("test-key-1")
 
-	err := store.Save(ctx, group)
+	err := store.Save(ctx, &group)
 	require.NoError(t, err)
 
 	pending, err := store.GetPending(ctx, 10)
@@ -81,13 +86,13 @@ func TestStore_Save_Idempotent(t *testing.T) {
 	group := testGroup("idempotent-key")
 
 	// First save
-	err := store.Save(ctx, group)
+	err := store.Save(ctx, &group)
 	require.NoError(t, err)
 
 	// Second save with updated status — should upsert
 	group.Status = alerts.StatusResolved
 	group.Alerts[0].Status = alerts.StatusResolved
-	err = store.Save(ctx, group)
+	err = store.Save(ctx, &group)
 	require.NoError(t, err)
 
 	// Should still be one group
@@ -106,9 +111,9 @@ func TestStore_GetPending_Filtering(t *testing.T) {
 	ctx := context.Background()
 
 	// Save two groups
-	err := store.Save(ctx, testGroup("pending-1"))
+	err := store.Save(ctx, ptrGroup("pending-1"))
 	require.NoError(t, err)
-	err = store.Save(ctx, testGroup("pending-2"))
+	err = store.Save(ctx, ptrGroup("pending-2"))
 	require.NoError(t, err)
 
 	// Mark first as sent
@@ -132,7 +137,7 @@ func TestStore_GetPending_Limit(t *testing.T) {
 	ctx := context.Background()
 
 	for i := range 5 {
-		err := store.Save(ctx, testGroup("limit-"+string(rune('a'+i))))
+		err := store.Save(ctx, ptrGroup("limit-"+string(rune('a'+i))))
 		require.NoError(t, err)
 	}
 
@@ -168,7 +173,7 @@ func TestStore_Save_MultipleAlerts(t *testing.T) {
 		Fingerprint: "def456",
 	})
 
-	err := store.Save(ctx, group)
+	err := store.Save(ctx, &group)
 	require.NoError(t, err)
 
 	pending, err := store.GetPending(ctx, 10)
@@ -200,7 +205,7 @@ func TestStore_Save_PayloadPreserved(t *testing.T) {
 
 	group := testGroup("payload-test")
 
-	err := store.Save(ctx, group)
+	err := store.Save(ctx, &group)
 	require.NoError(t, err)
 
 	pending, err := store.GetPending(ctx, 10)

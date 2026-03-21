@@ -23,7 +23,7 @@ func NewService(store Store, logger *slog.Logger, maxAlerts int) *Service {
 }
 
 // Receive validates and persists an incoming alert group.
-func (s *Service) Receive(ctx context.Context, group AlertGroup) error {
+func (s *Service) Receive(ctx context.Context, group *AlertGroup) error {
 	s.logger.Debug("receiving alert group",
 		"group_key", group.GroupKey,
 		"receiver", group.Receiver,

@@ -14,12 +14,12 @@ import (
 
 // mockStore implements Store for testing.
 type mockStore struct {
-	saveFunc       func(ctx context.Context, group AlertGroup) error
+	saveFunc       func(ctx context.Context, group *AlertGroup) error
 	getPendingFunc func(ctx context.Context, limit int) ([]AlertGroup, error)
 	markSentFunc   func(ctx context.Context, id string) error
 }
 
-func (m *mockStore) Save(ctx context.Context, group AlertGroup) error {
+func (m *mockStore) Save(ctx context.Context, group *AlertGroup) error {
 	if m.saveFunc != nil {
 		return m.saveFunc(ctx, group)
 	}
@@ -47,8 +47,8 @@ func testLogger() *slog.Logger {
 func TestService_Receive_Success(t *testing.T) {
 	var savedGroup AlertGroup
 	store := &mockStore{
-		saveFunc: func(_ context.Context, group AlertGroup) error {
-			savedGroup = group
+		saveFunc: func(_ context.Context, group *AlertGroup) error {
+			savedGroup = *group
 			return nil
 		},
 	}
@@ -56,7 +56,7 @@ func TestService_Receive_Success(t *testing.T) {
 	svc := NewService(store, testLogger(), 100)
 	group := validGroup()
 
-	err := svc.Receive(context.Background(), group)
+	err := svc.Receive(context.Background(), &group)
 	require.NoError(t, err)
 
 	assert.Equal(t, group.GroupKey, savedGroup.GroupKey)
@@ -105,7 +105,7 @@ func TestService_Receive_ValidationError(t *testing.T) {
 			group := validGroup()
 			tt.setup(&group)
 
-			err := svc.Receive(context.Background(), group)
+			err := svc.Receive(context.Background(), &group)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, tt.err)
 
@@ -117,7 +117,7 @@ func TestService_Receive_ValidationError(t *testing.T) {
 func TestService_Receive_StoreError(t *testing.T) {
 	storeErr := errors.New("database unavailable")
 	store := &mockStore{
-		saveFunc: func(_ context.Context, _ AlertGroup) error {
+		saveFunc: func(_ context.Context, _ *AlertGroup) error {
 			return storeErr
 		},
 	}
@@ -125,7 +125,7 @@ func TestService_Receive_StoreError(t *testing.T) {
 	svc := NewService(store, testLogger(), 100)
 	group := validGroup()
 
-	err := svc.Receive(context.Background(), group)
+	err := svc.Receive(context.Background(), &group)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, storeErr)
 
@@ -135,7 +135,7 @@ func TestService_Receive_StoreError(t *testing.T) {
 func TestService_Receive_DoesNotCallStore_OnValidationFailure(t *testing.T) {
 	storeCalled := false
 	store := &mockStore{
-		saveFunc: func(_ context.Context, _ AlertGroup) error {
+		saveFunc: func(_ context.Context, _ *AlertGroup) error {
 			storeCalled = true
 			return nil
 		},
@@ -146,7 +146,7 @@ func TestService_Receive_DoesNotCallStore_OnValidationFailure(t *testing.T) {
 	group := validGroup()
 	group.Version = "3" // invalid
 
-	_ = svc.Receive(context.Background(), group)
+	_ = svc.Receive(context.Background(), &group) //nolint:errcheck // intentionally ignoring
 	assert.False(t, storeCalled, "store.Save must not be called on validation failure")
 
 	t.Log("store was not called when validation failed")
@@ -167,7 +167,7 @@ func TestService_Receive_CustomMaxAlerts(t *testing.T) {
 		}
 	}
 
-	err := svc.Receive(context.Background(), group)
+	err := svc.Receive(context.Background(), &group)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPayloadTooLarge)
 

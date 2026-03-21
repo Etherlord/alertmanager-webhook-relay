@@ -33,13 +33,14 @@ func New(dsn string) (*Store, error) {
 	}
 
 	// Enable WAL mode for concurrent reads.
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sqlite enable WAL: %w", err)
 	}
 
 	// Enable foreign key constraints.
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sqlite enable foreign keys: %w", err)
 	}
@@ -77,7 +78,7 @@ func (s *Store) migrate() error {
 
 		slog.Debug("applying migration", "file", entry.Name())
 
-		if _, err := s.db.Exec(string(data)); err != nil {
+		if _, err := s.db.ExecContext(context.Background(), string(data)); err != nil {
 			return fmt.Errorf("sqlite apply migration %s: %w", entry.Name(), err)
 		}
 	}
@@ -87,7 +88,7 @@ func (s *Store) migrate() error {
 }
 
 // Save persists an alert group. Idempotent — upserts by GroupKey.
-func (s *Store) Save(ctx context.Context, group alerts.AlertGroup) error {
+func (s *Store) Save(ctx context.Context, group *alerts.AlertGroup) error {
 	slog.Debug("saving alert group", "group_key", group.GroupKey, "alerts_count", len(group.Alerts))
 
 	payload, err := json.Marshal(group)

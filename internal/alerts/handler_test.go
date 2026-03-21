@@ -18,10 +18,10 @@ import (
 
 // mockService implements the receiver interface for handler tests.
 type mockService struct {
-	receiveFunc func(ctx context.Context, group AlertGroup) error
+	receiveFunc func(ctx context.Context, group *AlertGroup) error
 }
 
-func (m *mockService) Receive(ctx context.Context, group AlertGroup) error {
+func (m *mockService) Receive(ctx context.Context, group *AlertGroup) error {
 	if m.receiveFunc != nil {
 		return m.receiveFunc(ctx, group)
 	}
@@ -45,7 +45,7 @@ func TestHandleWebhook_Success(t *testing.T) {
 	handler := HandleWebhook(handlerLogger(), svc, 1<<20)
 
 	body := validPayloadJSON(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -66,7 +66,7 @@ func TestHandleWebhook_WrongContentType(t *testing.T) {
 	handler := HandleWebhook(handlerLogger(), svc, 1<<20)
 
 	body := validPayloadJSON(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
 
@@ -82,7 +82,7 @@ func TestHandleWebhook_BodyTooLarge(t *testing.T) {
 	handler := HandleWebhook(handlerLogger(), svc, 10) // 10 bytes max
 
 	body := validPayloadJSON(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -97,7 +97,7 @@ func TestHandleWebhook_InvalidJSON(t *testing.T) {
 	svc := &mockService{}
 	handler := HandleWebhook(handlerLogger(), svc, 1<<20)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", strings.NewReader("{invalid"))
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", strings.NewReader("{invalid"))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -110,14 +110,14 @@ func TestHandleWebhook_InvalidJSON(t *testing.T) {
 
 func TestHandleWebhook_ValidationError(t *testing.T) {
 	svc := &mockService{
-		receiveFunc: func(_ context.Context, _ AlertGroup) error {
+		receiveFunc: func(_ context.Context, _ *AlertGroup) error {
 			return ErrInvalidPayload
 		},
 	}
 	handler := HandleWebhook(handlerLogger(), svc, 1<<20)
 
 	body := validPayloadJSON(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -130,14 +130,14 @@ func TestHandleWebhook_ValidationError(t *testing.T) {
 
 func TestHandleWebhook_PayloadTooLargeError(t *testing.T) {
 	svc := &mockService{
-		receiveFunc: func(_ context.Context, _ AlertGroup) error {
+		receiveFunc: func(_ context.Context, _ *AlertGroup) error {
 			return ErrPayloadTooLarge
 		},
 	}
 	handler := HandleWebhook(handlerLogger(), svc, 1<<20)
 
 	body := validPayloadJSON(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -150,14 +150,14 @@ func TestHandleWebhook_PayloadTooLargeError(t *testing.T) {
 
 func TestHandleWebhook_InternalError(t *testing.T) {
 	svc := &mockService{
-		receiveFunc: func(_ context.Context, _ AlertGroup) error {
+		receiveFunc: func(_ context.Context, _ *AlertGroup) error {
 			return errors.New("database error")
 		},
 	}
 	handler := HandleWebhook(handlerLogger(), svc, 1<<20)
 
 	body := validPayloadJSON(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -172,7 +172,7 @@ func TestHandleWebhook_EmptyBody(t *testing.T) {
 	svc := &mockService{}
 	handler := HandleWebhook(handlerLogger(), svc, 1<<20)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(),http.MethodPost, "/api/v1/alerts", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 

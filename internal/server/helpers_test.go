@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"net/http"
@@ -22,3 +23,19 @@ func httpGet(t *testing.T, url string) *http.Response {
 	}
 	return resp
 }
+
+// httpPost выполняет POST-запрос с context и JSON content-type (noctx-совместимо).
+func httpPost(t *testing.T, url string, body []byte) *http.Response {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to execute request: %v", err)
+	}
+	return resp
+}
+
