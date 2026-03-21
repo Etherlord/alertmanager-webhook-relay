@@ -1,7 +1,8 @@
-.PHONY: help build test test-race test-cover fmt vet lint check clean
+.PHONY: help build test test-race test-cover fmt vet lint check clean migrate-up migrate-down migrate-status migrate-create
 
 APP_NAME := alertmanager-webhook-relay
 RUN := docker compose --profile tools run --rm dev
+GOOSE := docker compose --profile db run --rm migrate
 
 ## Справка
 
@@ -36,6 +37,20 @@ lint: ## Запустить линтер
 	$(RUN) golangci-lint run
 
 check: fmt vet lint test-race ## Полная проверка: fmt + vet + lint + test-race
+
+## Миграции
+
+migrate-up: ## Применить миграции
+	$(GOOSE) -dir /migrations sqlite3 /data/alerts.db up
+
+migrate-down: ## Откатить последнюю миграцию
+	$(GOOSE) -dir /migrations sqlite3 /data/alerts.db down
+
+migrate-status: ## Показать статус миграций
+	$(GOOSE) -dir /migrations sqlite3 /data/alerts.db status
+
+migrate-create: ## Создать новую миграцию (NAME=имя)
+	$(GOOSE) -dir /migrations sqlite3 /data/alerts.db create $(NAME) sql
 
 ## Очистка
 

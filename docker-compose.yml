@@ -18,5 +18,13 @@ services:
     profiles:
       - tools
 
+  migrate:
+    image: ghcr.io/pressly/goose:latest
+    volumes:
+      - ./migrations/sqlite:/migrations
+      - ./data:/data
+    profiles:
+      - db
+
 volumes:
   gomodcache:
