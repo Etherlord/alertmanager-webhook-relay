@@ -19,6 +19,9 @@ services:
       - NOTIFY_BATCH_SIZE=${NOTIFY_BATCH_SIZE:-50}
       - NOTIFY_QUEUE_SIZE=${NOTIFY_QUEUE_SIZE:-100}
       - NOTIFY_SEND_TIMEOUT=${NOTIFY_SEND_TIMEOUT:-30s}
+      - PACHCA_TOKEN=${PACHCA_TOKEN:-}
+      - PACHCA_BASE_URL=${PACHCA_BASE_URL:-https://api.pachca.com}
+      - PACHCA_CHAT_ID=${PACHCA_CHAT_ID:-}
     profiles:
       - tools
 
