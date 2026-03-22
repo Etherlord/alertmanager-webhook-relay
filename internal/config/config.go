@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,6 +35,8 @@ const (
 
 	minNotifySendTimeout = 5 * time.Second
 	maxNotifySendTimeout = 120 * time.Second
+
+	maxPachcaTokenLen = 512
 )
 
 var validLogLevels = map[string]struct{}{
@@ -50,6 +53,14 @@ var validDatabaseDrivers = map[string]struct{}{
 // ErrInvalidConfig is a sentinel error for configuration validation failures.
 var ErrInvalidConfig = errors.New("invalid configuration")
 
+// PachcaConfig holds configuration for the Pachca notification channel.
+type PachcaConfig struct {
+	Enabled bool
+	BaseURL string
+	Token   string
+	ChatID  int
+}
+
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
 	Port            int
@@ -65,6 +76,8 @@ type Config struct {
 	NotifyBatchSize    int
 	NotifyQueueSize    int
 	NotifySendTimeout  time.Duration
+
+	Pachca PachcaConfig
 }
 
 // Load reads configuration from environment variables, applies defaults,
@@ -90,6 +103,10 @@ func Load() (*Config, error) {
 		NotifyBatchSize:    50,
 		NotifyQueueSize:    100,
 		NotifySendTimeout:  30 * time.Second,
+
+		Pachca: PachcaConfig{
+			BaseURL: "https://api.pachca.com",
+		},
 	}
 
 	if v := os.Getenv("PORT"); v != "" {
@@ -168,6 +185,24 @@ func Load() (*Config, error) {
 		cfg.NotifySendTimeout = d
 	}
 
+	// Pachca channel configuration.
+	if v := os.Getenv("PACHCA_TOKEN"); v != "" {
+		cfg.Pachca.Token = v
+		cfg.Pachca.Enabled = true
+	}
+
+	if v := os.Getenv("PACHCA_BASE_URL"); v != "" {
+		cfg.Pachca.BaseURL = v
+	}
+
+	if v := os.Getenv("PACHCA_CHAT_ID"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("невалидное значение PACHCA_CHAT_ID=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
+		}
+		cfg.Pachca.ChatID = n
+	}
+
 	cfg.normalize()
 
 	if err := cfg.validate(); err != nil {
@@ -192,6 +227,14 @@ func (c *Config) normalize() {
 	if trimmed := strings.TrimSpace(c.DatabaseDSN); trimmed != c.DatabaseDSN {
 		slog.Debug("нормализация: DATABASE_DSN", "действие", "TrimSpace")
 		c.DatabaseDSN = trimmed
+	}
+	if trimmed := strings.TrimRight(c.Pachca.BaseURL, "/"); trimmed != c.Pachca.BaseURL {
+		slog.Debug("нормализация: PACHCA_BASE_URL", "до", c.Pachca.BaseURL, "после", trimmed)
+		c.Pachca.BaseURL = trimmed
+	}
+	if trimmed := strings.TrimSpace(c.Pachca.Token); trimmed != c.Pachca.Token {
+		slog.Debug("нормализация: PACHCA_TOKEN", "действие", "TrimSpace")
+		c.Pachca.Token = trimmed
 	}
 }
 
@@ -276,6 +319,51 @@ func (c *Config) validate() error {
 	if c.NotifyQueueSize < c.NotifyBatchSize {
 		return fmt.Errorf("NOTIFY_QUEUE_SIZE=%d не может быть меньше NOTIFY_BATCH_SIZE=%d: %w",
 			c.NotifyQueueSize, c.NotifyBatchSize, ErrInvalidConfig)
+	}
+
+	// 13. Pachca channel (skip if disabled)
+	if c.Pachca.Enabled {
+		if err := c.validatePachca(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validatePachca checks all Pachca channel configuration constraints.
+func (c *Config) validatePachca() error {
+	// Token: length
+	if len(c.Pachca.Token) > maxPachcaTokenLen {
+		return fmt.Errorf("PACHCA_TOKEN длиной %d превышает максимум %d: %w",
+			len(c.Pachca.Token), maxPachcaTokenLen, ErrInvalidConfig)
+	}
+
+	// Token: control chars
+	if containsControlChars(c.Pachca.Token) {
+		return fmt.Errorf("PACHCA_TOKEN содержит управляющие символы: %w", ErrInvalidConfig)
+	}
+
+	// Token: dangerous sequences
+	if found, desc := containsDangerousSequence(c.Pachca.Token); found {
+		return fmt.Errorf("PACHCA_TOKEN содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
+	}
+
+	// ChatID: must be > 0
+	if c.Pachca.ChatID <= 0 {
+		return fmt.Errorf("PACHCA_CHAT_ID=%d должен быть больше 0: %w", c.Pachca.ChatID, ErrInvalidConfig)
+	}
+
+	// BaseURL: parse and validate scheme
+	u, err := url.Parse(c.Pachca.BaseURL)
+	if err != nil {
+		return fmt.Errorf("PACHCA_BASE_URL=%q невалидный URL (%s): %w", c.Pachca.BaseURL, err.Error(), ErrInvalidConfig)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("PACHCA_BASE_URL=%q должен использовать схему http или https: %w", c.Pachca.BaseURL, ErrInvalidConfig)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("PACHCA_BASE_URL=%q должен содержать хост: %w", c.Pachca.BaseURL, ErrInvalidConfig)
 	}
 
 	return nil
@@ -365,5 +453,11 @@ func (c Config) LogValue() slog.Value {
 		slog.Int("notify_batch_size", c.NotifyBatchSize),
 		slog.Int("notify_queue_size", c.NotifyQueueSize),
 		slog.String("notify_send_timeout", c.NotifySendTimeout.String()),
+		slog.Group("pachca",
+			slog.Bool("enabled", c.Pachca.Enabled),
+			slog.String("base_url", c.Pachca.BaseURL),
+			slog.String("token", "[REDACTED]"),
+			slog.Int("chat_id", c.Pachca.ChatID),
+		),
 	)
 }

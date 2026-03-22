@@ -25,6 +25,9 @@ func setDefaults(t *testing.T) {
 	t.Setenv("NOTIFY_BATCH_SIZE", "")
 	t.Setenv("NOTIFY_QUEUE_SIZE", "")
 	t.Setenv("NOTIFY_SEND_TIMEOUT", "")
+	t.Setenv("PACHCA_TOKEN", "")
+	t.Setenv("PACHCA_BASE_URL", "")
+	t.Setenv("PACHCA_CHAT_ID", "")
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -793,6 +796,309 @@ func TestContainsDangerousSequence(t *testing.T) {
 			}
 
 			t.Logf("containsDangerousSequence(%q) = (%v, %q)", tt.input, found, desc)
+		})
+	}
+}
+
+// --- Pachca configuration tests ---
+
+func TestLoad_PachcaDefaults(t *testing.T) {
+	setDefaults(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.False(t, cfg.Pachca.Enabled)
+	assert.Equal(t, "https://api.pachca.com", cfg.Pachca.BaseURL)
+	assert.Empty(t, cfg.Pachca.Token)
+	assert.Equal(t, 0, cfg.Pachca.ChatID)
+
+	t.Logf("pachca defaults: enabled=%v, base_url=%s", cfg.Pachca.Enabled, cfg.Pachca.BaseURL)
+}
+
+func TestLoad_PachcaImplicitEnable(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("PACHCA_TOKEN", "test-token-value")
+	t.Setenv("PACHCA_CHAT_ID", "12345")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Pachca.Enabled)
+	assert.Equal(t, "https://api.pachca.com", cfg.Pachca.BaseURL)
+	assert.Equal(t, "test-token-value", cfg.Pachca.Token)
+	assert.Equal(t, 12345, cfg.Pachca.ChatID)
+
+	t.Logf("pachca enabled: token=***, chat_id=%d, base_url=%s",
+		cfg.Pachca.ChatID, cfg.Pachca.BaseURL)
+}
+
+func TestLoad_PachcaCustomBaseURL(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("PACHCA_TOKEN", "test-token-value")
+	t.Setenv("PACHCA_CHAT_ID", "42")
+	t.Setenv("PACHCA_BASE_URL", "https://custom.pachca.com")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Pachca.Enabled)
+	assert.Equal(t, "https://custom.pachca.com", cfg.Pachca.BaseURL)
+
+	t.Logf("pachca custom base_url=%s", cfg.Pachca.BaseURL)
+}
+
+func TestLoad_PachcaDisabledNoValidation(t *testing.T) {
+	setDefaults(t)
+	// Token пустой → Enabled=false → ChatID=0 не вызывает ошибку
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.Pachca.Enabled)
+}
+
+func TestLoad_InvalidPachcaChatID(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"not a number", "abc"},
+		{"zero", "0"},
+		{"negative", "-1"},
+		{"float", "1.5"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PACHCA_TOKEN", "test-token-value")
+			t.Setenv("PACHCA_CHAT_ID", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("PACHCA_CHAT_ID=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_PachcaCrossField_MissingChatID(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("PACHCA_TOKEN", "test-token-value")
+	// PACHCA_CHAT_ID не задан → Enabled=true, но ChatID=0 → ошибка
+
+	cfg, err := Load()
+	assert.Nil(t, cfg)
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "PACHCA_CHAT_ID")
+
+	t.Logf("cross-field: token set, chat_id missing → error: %v", err)
+}
+
+func TestLoad_PachcaCrossField_MissingToken(t *testing.T) {
+	setDefaults(t)
+	// Token пустой → Enabled=false → ChatID не парсится и валидация пропускается
+	t.Setenv("PACHCA_CHAT_ID", "123")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.Pachca.Enabled)
+	// ChatID парсится, но без Token канал выключен
+}
+
+func TestLoad_InvalidPachcaBaseURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"no scheme", "api.pachca.com"},
+		{"ftp scheme", "ftp://api.pachca.com"},
+		{"empty host", "https://"},
+		{"invalid url", "://bad"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PACHCA_TOKEN", "test-token-value")
+			t.Setenv("PACHCA_CHAT_ID", "123")
+			t.Setenv("PACHCA_BASE_URL", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("PACHCA_BASE_URL=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidPachcaToken(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		errContains string
+	}{
+		{"control chars", "token\x01value", "управляющие символы"},
+		{"tab char", "token\tvalue", "управляющие символы"},
+		{"shell expansion", "$(whoami)", "опасную последовательность"},
+		{"template injection", "{{.Token}}", "опасную последовательность"},
+		{"too long", strings.Repeat("a", 513), "превышает максимум"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PACHCA_TOKEN", tt.value)
+			t.Setenv("PACHCA_CHAT_ID", "123")
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+
+			t.Logf("PACHCA_TOKEN=%q → error: %v", "[REDACTED]", err)
+		})
+	}
+}
+
+func TestLoad_PachcaNormalization(t *testing.T) {
+	tests := []struct {
+		name   string
+		envKey string
+		env    string
+		check  func(t *testing.T, cfg *Config)
+	}{
+		{
+			name:   "BaseURL trailing slash trimmed",
+			envKey: "PACHCA_BASE_URL",
+			env:    "https://api.pachca.com/",
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "https://api.pachca.com", cfg.Pachca.BaseURL)
+			},
+		},
+		{
+			name:   "BaseURL multiple trailing slashes trimmed",
+			envKey: "PACHCA_BASE_URL",
+			env:    "https://api.pachca.com///",
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "https://api.pachca.com", cfg.Pachca.BaseURL)
+			},
+		},
+		{
+			name:   "Token whitespace trimmed",
+			envKey: "PACHCA_TOKEN",
+			env:    " test-token-value ",
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "test-token-value", cfg.Pachca.Token)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PACHCA_TOKEN", "test-token-value")
+			t.Setenv("PACHCA_CHAT_ID", "123")
+			t.Setenv(tt.envKey, tt.env)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.check(t, cfg)
+
+			t.Logf("%s=%q → normalized", tt.envKey, tt.env)
+		})
+	}
+}
+
+func TestConfig_LogValue_Pachca(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("PACHCA_TOKEN", "super-secret-token")
+	t.Setenv("PACHCA_CHAT_ID", "42")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger.Info("test", "config", cfg)
+
+	output := buf.String()
+	t.Logf("slog output: %s", output)
+
+	// Token must be redacted
+	assert.Contains(t, output, "[REDACTED]")
+	assert.NotContains(t, output, "super-secret-token")
+	// Other Pachca fields visible
+	assert.Contains(t, output, "42")
+	assert.Contains(t, output, "api.pachca.com")
+}
+
+func TestLoad_PachcaValidEdgeCases(t *testing.T) {
+	tests := []struct {
+		name   string
+		chatID string
+		check  func(t *testing.T, cfg *Config)
+	}{
+		{"min chat_id", "1", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 1, cfg.Pachca.ChatID)
+		}},
+		{"large chat_id", "999999999", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 999999999, cfg.Pachca.ChatID)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PACHCA_TOKEN", "test-token-value")
+			t.Setenv("PACHCA_CHAT_ID", tt.chatID)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.check(t, cfg)
+
+			t.Logf("edge case %q: PACHCA_CHAT_ID=%s", tt.name, tt.chatID)
+		})
+	}
+}
+
+func TestLoad_PachcaBaseURLSchemes(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		wantErr bool
+	}{
+		{"https valid", "https://api.pachca.com", false},
+		{"http valid", "http://localhost:8080", false},
+		{"ftp invalid", "ftp://files.pachca.com", true},
+		{"ws invalid", "ws://api.pachca.com", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PACHCA_TOKEN", "test-token-value")
+			t.Setenv("PACHCA_CHAT_ID", "123")
+			t.Setenv("PACHCA_BASE_URL", tt.baseURL)
+
+			cfg, err := Load()
+			if tt.wantErr {
+				assert.Nil(t, cfg)
+				assert.ErrorIs(t, err, ErrInvalidConfig)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.baseURL, cfg.Pachca.BaseURL)
+			}
+
+			t.Logf("PACHCA_BASE_URL=%q → wantErr=%v, err=%v", tt.baseURL, tt.wantErr, err)
 		})
 	}
 }
