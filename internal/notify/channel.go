@@ -10,5 +10,5 @@ type Channel interface {
 
 	// Send delivers a notification through the channel.
 	// Returns an error if delivery fails.
-	Send(ctx context.Context, notification Notification) error
+	Send(ctx context.Context, notification *Notification) error
 }
