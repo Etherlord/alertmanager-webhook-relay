@@ -36,7 +36,12 @@ const (
 	minNotifySendTimeout = 5 * time.Second
 	maxNotifySendTimeout = 120 * time.Second
 
-	maxPachcaTokenLen = 512
+	minPachcaTokenLen   = 1
+	maxPachcaTokenLen   = 512
+	maxPachcaBaseURLLen = 2048
+
+	minPachcaChatID = 1
+	maxPachcaChatID = 999999999
 )
 
 var validLogLevels = map[string]struct{}{
@@ -57,7 +62,7 @@ var ErrInvalidConfig = errors.New("invalid configuration")
 type PachcaConfig struct {
 	Enabled bool
 	BaseURL string
-	Token   string
+	Token   string // #nosec G117 — митигация через LogValue()
 	ChatID  int
 }
 
@@ -337,15 +342,22 @@ func (c *Config) validate() error {
 
 // validatePachca checks all Pachca channel configuration constraints.
 func (c *Config) validatePachca() error {
-	// Token: length
+	// Token: min length
+	if len(c.Pachca.Token) < minPachcaTokenLen {
+		return fmt.Errorf("PACHCA_TOKEN должен содержать минимум %d символов: %w",
+			minPachcaTokenLen, ErrInvalidConfig)
+	}
+
+	// Token: max length
 	if len(c.Pachca.Token) > maxPachcaTokenLen {
 		return fmt.Errorf("PACHCA_TOKEN длиной %d превышает максимум %d: %w",
 			len(c.Pachca.Token), maxPachcaTokenLen, ErrInvalidConfig)
 	}
 
-	// Token: control chars
-	if containsControlChars(c.Pachca.Token) {
-		return fmt.Errorf("PACHCA_TOKEN содержит управляющие символы: %w", ErrInvalidConfig)
+	// Token: printable ASCII only (0x21–0x7E) — subsumes control chars check
+	if !isPrintableASCII(c.Pachca.Token) {
+		return fmt.Errorf("PACHCA_TOKEN содержит недопустимые символы (допустимы только printable ASCII): %w",
+			ErrInvalidConfig)
 	}
 
 	// Token: dangerous sequences
@@ -353,9 +365,26 @@ func (c *Config) validatePachca() error {
 		return fmt.Errorf("PACHCA_TOKEN содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
 	}
 
-	// ChatID: must be > 0
-	if c.Pachca.ChatID <= 0 {
-		return fmt.Errorf("PACHCA_CHAT_ID=%d должен быть больше 0: %w", c.Pachca.ChatID, ErrInvalidConfig)
+	// ChatID: numeric range
+	if c.Pachca.ChatID < minPachcaChatID || c.Pachca.ChatID > maxPachcaChatID {
+		return fmt.Errorf("PACHCA_CHAT_ID=%d вне диапазона [%d, %d]: %w",
+			c.Pachca.ChatID, minPachcaChatID, maxPachcaChatID, ErrInvalidConfig)
+	}
+
+	// BaseURL: max length
+	if len(c.Pachca.BaseURL) > maxPachcaBaseURLLen {
+		return fmt.Errorf("PACHCA_BASE_URL длиной %d превышает максимум %d: %w",
+			len(c.Pachca.BaseURL), maxPachcaBaseURLLen, ErrInvalidConfig)
+	}
+
+	// BaseURL: control chars
+	if containsControlChars(c.Pachca.BaseURL) {
+		return fmt.Errorf("PACHCA_BASE_URL содержит управляющие символы: %w", ErrInvalidConfig)
+	}
+
+	// BaseURL: dangerous sequences
+	if found, desc := containsDangerousSequence(c.Pachca.BaseURL); found {
+		return fmt.Errorf("PACHCA_BASE_URL содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
 	}
 
 	// BaseURL: parse and validate scheme
@@ -371,6 +400,17 @@ func (c *Config) validatePachca() error {
 	}
 
 	return nil
+}
+
+// isPrintableASCII reports whether s contains only printable ASCII characters
+// (0x21–0x7E). Rejects spaces (0x20), control characters, DEL (0x7F), and Unicode.
+func isPrintableASCII(s string) bool {
+	for _, r := range s {
+		if r < 0x21 || r > 0x7E {
+			return false
+		}
+	}
+	return true
 }
 
 // containsControlChars reports whether s contains ASCII control characters

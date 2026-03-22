@@ -865,6 +865,7 @@ func TestLoad_InvalidPachcaChatID(t *testing.T) {
 		{"zero", "0"},
 		{"negative", "-1"},
 		{"float", "1.5"},
+		{"above max", "1000000000"},
 	}
 
 	for _, tt := range tests {
@@ -915,6 +916,10 @@ func TestLoad_InvalidPachcaBaseURL(t *testing.T) {
 		{"ftp scheme", "ftp://api.pachca.com"},
 		{"empty host", "https://"},
 		{"invalid url", "://bad"},
+		{"control chars", "https://api.pachca\x01.com"},
+		{"shell expansion", "https://api.pachca.com/$(whoami)"},
+		{"template injection", "https://api.pachca.com/{{.Path}}"},
+		{"too long", "https://" + strings.Repeat("a", 2041)},
 	}
 
 	for _, tt := range tests {
@@ -939,8 +944,12 @@ func TestLoad_InvalidPachcaToken(t *testing.T) {
 		value       string
 		errContains string
 	}{
-		{"control chars", "token\x01value", "управляющие символы"},
-		{"tab char", "token\tvalue", "управляющие символы"},
+		{"whitespace only", "   ", "минимум"},
+		{"space inside", "token value", "printable ASCII"},
+		{"control chars", "token\x01value", "printable ASCII"},
+		{"tab char", "token\tvalue", "printable ASCII"},
+		{"unicode cyrillic", "токен-значение-длинный", "printable ASCII"},
+		{"unicode emoji", "token-\xf0\x9f\x94\x91-value", "printable ASCII"},
 		{"shell expansion", "$(whoami)", "опасную последовательность"},
 		{"template injection", "{{.Token}}", "опасную последовательность"},
 		{"too long", strings.Repeat("a", 513), "превышает максимум"},
@@ -1050,17 +1059,33 @@ func TestConfig_LogValue_Pachca(t *testing.T) {
 
 func TestLoad_PachcaValidEdgeCases(t *testing.T) {
 	tests := []struct {
-		name   string
-		chatID string
-		check  func(t *testing.T, cfg *Config)
+		name  string
+		env   map[string]string
+		check func(t *testing.T, cfg *Config)
 	}{
-		{"min chat_id", "1", func(t *testing.T, cfg *Config) {
+		{"min chat_id", map[string]string{"PACHCA_CHAT_ID": "1"}, func(t *testing.T, cfg *Config) {
 			t.Helper()
 			assert.Equal(t, 1, cfg.Pachca.ChatID)
 		}},
-		{"large chat_id", "999999999", func(t *testing.T, cfg *Config) {
+		{"max chat_id", map[string]string{"PACHCA_CHAT_ID": "999999999"}, func(t *testing.T, cfg *Config) {
 			t.Helper()
 			assert.Equal(t, 999999999, cfg.Pachca.ChatID)
+		}},
+		{"min token length", map[string]string{"PACHCA_TOKEN": "a"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, "a", cfg.Pachca.Token)
+		}},
+		{"max token length", map[string]string{"PACHCA_TOKEN": strings.Repeat("a", 512)}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Len(t, cfg.Pachca.Token, 512)
+		}},
+		{"token printable ASCII specials", map[string]string{"PACHCA_TOKEN": "!@#$%^&*()-_=+[]|;:',.<>?/~"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.True(t, cfg.Pachca.Enabled)
+		}},
+		{"base_url max length boundary", map[string]string{"PACHCA_BASE_URL": "https://" + strings.Repeat("a", 2040)}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Len(t, cfg.Pachca.BaseURL, 2048)
 		}},
 	}
 
@@ -1068,13 +1093,16 @@ func TestLoad_PachcaValidEdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setDefaults(t)
 			t.Setenv("PACHCA_TOKEN", "test-token-value")
-			t.Setenv("PACHCA_CHAT_ID", tt.chatID)
+			t.Setenv("PACHCA_CHAT_ID", "123")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
 
 			cfg, err := Load()
 			require.NoError(t, err)
 			tt.check(t, cfg)
 
-			t.Logf("edge case %q: PACHCA_CHAT_ID=%s", tt.name, tt.chatID)
+			t.Logf("edge case %q", tt.name)
 		})
 	}
 }
