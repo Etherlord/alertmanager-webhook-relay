@@ -1,0 +1,74 @@
+package notify
+
+import (
+	"context"
+	"log/slog"
+)
+
+// Worker processes notifications from a queue by sending them through a Channel.
+// Each Channel has its own Worker + Queue pair.
+type Worker struct {
+	ch       Channel
+	queue    *Queue
+	resultCh chan<- SendResult
+	logger   *slog.Logger
+}
+
+// NewWorker creates a new worker for the given channel and queue.
+// Results are sent to resultCh for the dispatcher to collect.
+func NewWorker(ch Channel, queue *Queue, resultCh chan<- SendResult, logger *slog.Logger) *Worker {
+	logger.Debug("creating worker",
+		"channel", ch.Name(),
+		"queue", queue.Name(),
+	)
+	return &Worker{
+		ch:       ch,
+		queue:    queue,
+		resultCh: resultCh,
+		logger:   logger,
+	}
+}
+
+// Run starts the worker loop. It dequeues notifications and sends them
+// through the channel until the context is cancelled or the queue is closed.
+func (w *Worker) Run(ctx context.Context) {
+	w.logger.Info("worker started", "channel", w.ch.Name())
+	defer w.logger.Info("worker stopped", "channel", w.ch.Name())
+
+	for {
+		n, err := w.queue.Dequeue(ctx)
+		if err != nil {
+			w.logger.Debug("worker dequeue ended",
+				"channel", w.ch.Name(),
+				"error", err,
+			)
+			return
+		}
+
+		w.logger.Debug("worker sending notification",
+			"channel", w.ch.Name(),
+			"group_key", n.GroupKey,
+		)
+
+		sendErr := w.ch.Send(ctx, n)
+
+		if sendErr != nil {
+			w.logger.Error("notification delivery failed",
+				"channel", w.ch.Name(),
+				"group_key", n.GroupKey,
+				"error", sendErr,
+			)
+		} else {
+			w.logger.Debug("notification delivered",
+				"channel", w.ch.Name(),
+				"group_key", n.GroupKey,
+			)
+		}
+
+		w.resultCh <- SendResult{
+			GroupKey: n.GroupKey,
+			Channel:  w.ch.Name(),
+			Err:      sendErr,
+		}
+	}
+}

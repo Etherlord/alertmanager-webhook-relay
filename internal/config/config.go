@@ -22,6 +22,18 @@ const (
 	maxMaxAlertsPerPayload = 1000
 
 	maxDSNLen = 2048
+
+	minNotifyPollInterval = 1 * time.Second
+	maxNotifyPollInterval = 60 * time.Second
+
+	minNotifyBatchSize = 1
+	maxNotifyBatchSize = 500
+
+	minNotifyQueueSize = 10
+	maxNotifyQueueSize = 10000
+
+	minNotifySendTimeout = 5 * time.Second
+	maxNotifySendTimeout = 120 * time.Second
 )
 
 var validLogLevels = map[string]struct{}{
@@ -48,6 +60,11 @@ type Config struct {
 	DatabaseDSN         string
 	MaxPayloadSize      int
 	MaxAlertsPerPayload int
+
+	NotifyPollInterval time.Duration
+	NotifyBatchSize    int
+	NotifyQueueSize    int
+	NotifySendTimeout  time.Duration
 }
 
 // Load reads configuration from environment variables, applies defaults,
@@ -68,6 +85,11 @@ func Load() (*Config, error) {
 		DatabaseDSN:         "data/alerts.db",
 		MaxPayloadSize:      1048576, // 1 MB
 		MaxAlertsPerPayload: 100,
+
+		NotifyPollInterval: 5 * time.Second,
+		NotifyBatchSize:    50,
+		NotifyQueueSize:    100,
+		NotifySendTimeout:  30 * time.Second,
 	}
 
 	if v := os.Getenv("PORT"); v != "" {
@@ -112,6 +134,38 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("невалидное значение MAX_ALERTS_PER_PAYLOAD=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
 		}
 		cfg.MaxAlertsPerPayload = n
+	}
+
+	if v := os.Getenv("NOTIFY_POLL_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("невалидное значение NOTIFY_POLL_INTERVAL=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
+		}
+		cfg.NotifyPollInterval = d
+	}
+
+	if v := os.Getenv("NOTIFY_BATCH_SIZE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("невалидное значение NOTIFY_BATCH_SIZE=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
+		}
+		cfg.NotifyBatchSize = n
+	}
+
+	if v := os.Getenv("NOTIFY_QUEUE_SIZE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("невалидное значение NOTIFY_QUEUE_SIZE=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
+		}
+		cfg.NotifyQueueSize = n
+	}
+
+	if v := os.Getenv("NOTIFY_SEND_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("невалидное значение NOTIFY_SEND_TIMEOUT=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
+		}
+		cfg.NotifySendTimeout = d
 	}
 
 	cfg.normalize()
@@ -192,6 +246,30 @@ func (c *Config) validate() error {
 	}
 	if c.ShutdownTimeout > maxShutdownTimeout {
 		return fmt.Errorf("SHUTDOWN_TIMEOUT=%s превышает максимум %s: %w", c.ShutdownTimeout, maxShutdownTimeout, ErrInvalidConfig)
+	}
+
+	// 8. Duration (NotifyPollInterval)
+	if c.NotifyPollInterval < minNotifyPollInterval || c.NotifyPollInterval > maxNotifyPollInterval {
+		return fmt.Errorf("NOTIFY_POLL_INTERVAL=%s вне диапазона [%s, %s]: %w",
+			c.NotifyPollInterval, minNotifyPollInterval, maxNotifyPollInterval, ErrInvalidConfig)
+	}
+
+	// 9. Numeric range (NotifyBatchSize)
+	if c.NotifyBatchSize < minNotifyBatchSize || c.NotifyBatchSize > maxNotifyBatchSize {
+		return fmt.Errorf("NOTIFY_BATCH_SIZE=%d вне диапазона [%d, %d]: %w",
+			c.NotifyBatchSize, minNotifyBatchSize, maxNotifyBatchSize, ErrInvalidConfig)
+	}
+
+	// 10. Numeric range (NotifyQueueSize)
+	if c.NotifyQueueSize < minNotifyQueueSize || c.NotifyQueueSize > maxNotifyQueueSize {
+		return fmt.Errorf("NOTIFY_QUEUE_SIZE=%d вне диапазона [%d, %d]: %w",
+			c.NotifyQueueSize, minNotifyQueueSize, maxNotifyQueueSize, ErrInvalidConfig)
+	}
+
+	// 11. Duration (NotifySendTimeout)
+	if c.NotifySendTimeout < minNotifySendTimeout || c.NotifySendTimeout > maxNotifySendTimeout {
+		return fmt.Errorf("NOTIFY_SEND_TIMEOUT=%s вне диапазона [%s, %s]: %w",
+			c.NotifySendTimeout, minNotifySendTimeout, maxNotifySendTimeout, ErrInvalidConfig)
 	}
 
 	return nil
@@ -277,5 +355,9 @@ func (c Config) LogValue() slog.Value {
 		slog.String("database_dsn", "[REDACTED]"),
 		slog.Int("max_payload_size", c.MaxPayloadSize),
 		slog.Int("max_alerts_per_payload", c.MaxAlertsPerPayload),
+		slog.String("notify_poll_interval", c.NotifyPollInterval.String()),
+		slog.Int("notify_batch_size", c.NotifyBatchSize),
+		slog.Int("notify_queue_size", c.NotifyQueueSize),
+		slog.String("notify_send_timeout", c.NotifySendTimeout.String()),
 	)
 }

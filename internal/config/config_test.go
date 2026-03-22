@@ -21,6 +21,10 @@ func setDefaults(t *testing.T) {
 	t.Setenv("DATABASE_DSN", "")
 	t.Setenv("MAX_PAYLOAD_SIZE", "")
 	t.Setenv("MAX_ALERTS_PER_PAYLOAD", "")
+	t.Setenv("NOTIFY_POLL_INTERVAL", "")
+	t.Setenv("NOTIFY_BATCH_SIZE", "")
+	t.Setenv("NOTIFY_QUEUE_SIZE", "")
+	t.Setenv("NOTIFY_SEND_TIMEOUT", "")
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -36,10 +40,16 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, "data/alerts.db", cfg.DatabaseDSN)
 	assert.Equal(t, 1048576, cfg.MaxPayloadSize)
 	assert.Equal(t, 100, cfg.MaxAlertsPerPayload)
+	assert.Equal(t, 5*time.Second, cfg.NotifyPollInterval)
+	assert.Equal(t, 50, cfg.NotifyBatchSize)
+	assert.Equal(t, 100, cfg.NotifyQueueSize)
+	assert.Equal(t, 30*time.Second, cfg.NotifySendTimeout)
 
 	t.Logf("defaults: port=%d, log_level=%s, shutdown_timeout=%s, db_driver=%s, db_dsn=%s, max_payload=%d, max_alerts=%d",
 		cfg.Port, cfg.LogLevel, cfg.ShutdownTimeout,
 		cfg.DatabaseDriver, cfg.DatabaseDSN, cfg.MaxPayloadSize, cfg.MaxAlertsPerPayload)
+	t.Logf("notify defaults: poll_interval=%s, batch_size=%d, queue_size=%d, send_timeout=%s",
+		cfg.NotifyPollInterval, cfg.NotifyBatchSize, cfg.NotifyQueueSize, cfg.NotifySendTimeout)
 }
 
 func TestLoad_CustomValues(t *testing.T) {
@@ -451,6 +461,10 @@ func TestConfig_LogValue(t *testing.T) {
 	assert.NotContains(t, str, "/tmp/test.db")
 	assert.Contains(t, str, "2097152")
 	assert.Contains(t, str, "50")
+	assert.Contains(t, str, "5s")           // notify_poll_interval default
+	assert.Contains(t, str, "notify_batch") // notify_batch_size
+	assert.Contains(t, str, "notify_queue") // notify_queue_size
+	assert.Contains(t, str, "30s")          // notify_send_timeout default
 
 	// Check through a real slog.Logger writing to a buffer
 	var buf strings.Builder
@@ -465,6 +479,180 @@ func TestConfig_LogValue(t *testing.T) {
 	assert.Contains(t, output, "sqlite")
 	assert.Contains(t, output, "[REDACTED]")
 	assert.NotContains(t, output, "/tmp/test.db")
+}
+
+func TestLoad_NotifyCustomValues(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("NOTIFY_POLL_INTERVAL", "10s")
+	t.Setenv("NOTIFY_BATCH_SIZE", "200")
+	t.Setenv("NOTIFY_QUEUE_SIZE", "500")
+	t.Setenv("NOTIFY_SEND_TIMEOUT", "60s")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, 10*time.Second, cfg.NotifyPollInterval)
+	assert.Equal(t, 200, cfg.NotifyBatchSize)
+	assert.Equal(t, 500, cfg.NotifyQueueSize)
+	assert.Equal(t, 60*time.Second, cfg.NotifySendTimeout)
+}
+
+func TestLoad_InvalidNotifyPollInterval(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"invalid format", "not-a-duration"},
+		{"zero", "0s"},
+		{"negative", "-1s"},
+		{"below min", "500ms"},
+		{"above max", "61s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("NOTIFY_POLL_INTERVAL", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("NOTIFY_POLL_INTERVAL=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidNotifyBatchSize(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"not a number", "abc"},
+		{"zero", "0"},
+		{"negative", "-1"},
+		{"too large", "501"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("NOTIFY_BATCH_SIZE", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("NOTIFY_BATCH_SIZE=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidNotifyQueueSize(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"not a number", "abc"},
+		{"below min", "9"},
+		{"zero", "0"},
+		{"negative", "-1"},
+		{"too large", "10001"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("NOTIFY_QUEUE_SIZE", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("NOTIFY_QUEUE_SIZE=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidNotifySendTimeout(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"invalid format", "not-a-duration"},
+		{"zero", "0s"},
+		{"negative", "-1s"},
+		{"below min", "4s"},
+		{"above max", "121s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("NOTIFY_SEND_TIMEOUT", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("NOTIFY_SEND_TIMEOUT=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_NotifyEdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		envKey   string
+		envValue string
+		check    func(t *testing.T, cfg *Config)
+	}{
+		{"min poll interval", "NOTIFY_POLL_INTERVAL", "1s", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, time.Second, cfg.NotifyPollInterval)
+		}},
+		{"max poll interval", "NOTIFY_POLL_INTERVAL", "1m", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, time.Minute, cfg.NotifyPollInterval)
+		}},
+		{"min batch size", "NOTIFY_BATCH_SIZE", "1", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 1, cfg.NotifyBatchSize)
+		}},
+		{"max batch size", "NOTIFY_BATCH_SIZE", "500", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 500, cfg.NotifyBatchSize)
+		}},
+		{"min queue size", "NOTIFY_QUEUE_SIZE", "10", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 10, cfg.NotifyQueueSize)
+		}},
+		{"max queue size", "NOTIFY_QUEUE_SIZE", "10000", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 10000, cfg.NotifyQueueSize)
+		}},
+		{"min send timeout", "NOTIFY_SEND_TIMEOUT", "5s", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 5*time.Second, cfg.NotifySendTimeout)
+		}},
+		{"max send timeout", "NOTIFY_SEND_TIMEOUT", "2m", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 2*time.Minute, cfg.NotifySendTimeout)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv(tt.envKey, tt.envValue)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.check(t, cfg)
+
+			t.Logf("edge case %q: %s=%s", tt.name, tt.envKey, tt.envValue)
+		})
+	}
 }
 
 func TestContainsControlChars(t *testing.T) {
