@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
@@ -22,12 +23,11 @@ type discardWriter struct{}
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func testNotification(groupKey string) *Notification {
-	n := NewNotification(&alerts.AlertGroup{
+	return NewNotification(&alerts.AlertGroup{
 		GroupKey: groupKey,
 		Status:   alerts.StatusFiring,
 		Receiver: "test",
 	})
-	return &n
 }
 
 func TestNewQueue(t *testing.T) {
@@ -57,7 +57,7 @@ func TestQueue_FIFO(t *testing.T) {
 	ctx := context.Background()
 
 	for i := range 3 {
-		n := testNotification("group-" + string(rune('a'+i)))
+		n := testNotification(fmt.Sprintf("group-%d", i))
 		require.NoError(t, q.Enqueue(ctx, n))
 	}
 
@@ -67,9 +67,9 @@ func TestQueue_FIFO(t *testing.T) {
 	got2, _ := q.Dequeue(ctx)
 	got3, _ := q.Dequeue(ctx)
 
-	assert.Equal(t, "group-a", got1.GroupKey)
-	assert.Equal(t, "group-b", got2.GroupKey)
-	assert.Equal(t, "group-c", got3.GroupKey)
+	assert.Equal(t, "group-0", got1.GroupKey)
+	assert.Equal(t, "group-1", got2.GroupKey)
+	assert.Equal(t, "group-2", got3.GroupKey)
 }
 
 func TestQueue_BackPressure_ContextCancel(t *testing.T) {
@@ -157,7 +157,7 @@ func TestQueue_ConcurrentEnqueueDequeue(t *testing.T) {
 		go func(pid int) {
 			defer wg.Done()
 			for m := range messagesPerProducer {
-				n := testNotification("p" + string(rune('0'+pid)) + "-m" + string(rune('0'+m)))
+				n := testNotification(fmt.Sprintf("p%d-m%d", pid, m))
 				_ = q.Enqueue(ctx, n)
 			}
 		}(p)
@@ -207,12 +207,11 @@ func TestQueue_Drain_OnClose(t *testing.T) {
 	// Items already in queue can still be dequeued after close.
 	n1, err := q.Dequeue(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, "group-key-not-checked", "group-key-not-checked") // just drain
-	_ = n1
+	assert.Equal(t, "g1", n1.GroupKey)
 
 	n2, err := q.Dequeue(ctx)
 	require.NoError(t, err)
-	_ = n2
+	assert.Equal(t, "g2", n2.GroupKey)
 
 	// After drain, Dequeue returns ErrQueueClosed.
 	_, err = q.Dequeue(ctx)

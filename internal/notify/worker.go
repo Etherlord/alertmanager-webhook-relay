@@ -3,29 +3,33 @@ package notify
 import (
 	"context"
 	"log/slog"
+	"time"
 )
 
 // Worker processes notifications from a queue by sending them through a Channel.
 // Each Channel has its own Worker + Queue pair.
 type Worker struct {
-	ch       Channel
-	queue    *Queue
-	resultCh chan<- SendResult
-	logger   *slog.Logger
+	ch          Channel
+	queue       *Queue
+	resultCh    chan<- SendResult
+	sendTimeout time.Duration
+	logger      *slog.Logger
 }
 
 // NewWorker creates a new worker for the given channel and queue.
 // Results are sent to resultCh for the dispatcher to collect.
-func NewWorker(ch Channel, queue *Queue, resultCh chan<- SendResult, logger *slog.Logger) *Worker {
+func NewWorker(ch Channel, queue *Queue, resultCh chan<- SendResult, sendTimeout time.Duration, logger *slog.Logger) *Worker {
 	logger.Debug("creating worker",
 		"channel", ch.Name(),
 		"queue", queue.Name(),
+		"send_timeout", sendTimeout,
 	)
 	return &Worker{
-		ch:       ch,
-		queue:    queue,
-		resultCh: resultCh,
-		logger:   logger,
+		ch:          ch,
+		queue:       queue,
+		resultCh:    resultCh,
+		sendTimeout: sendTimeout,
+		logger:      logger,
 	}
 }
 
@@ -50,7 +54,9 @@ func (w *Worker) Run(ctx context.Context) {
 			"group_key", n.GroupKey,
 		)
 
-		sendErr := w.ch.Send(ctx, n)
+		sendCtx, sendCancel := context.WithTimeout(ctx, w.sendTimeout)
+		sendErr := w.ch.Send(sendCtx, n)
+		sendCancel()
 
 		if sendErr != nil {
 			w.logger.Error("notification delivery failed",

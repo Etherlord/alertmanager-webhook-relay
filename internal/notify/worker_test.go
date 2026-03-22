@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -41,7 +42,7 @@ func TestWorker_SendSuccess(t *testing.T) {
 	ch := &mockChannel{name: "test-channel"}
 	q := NewQueue("test-channel", 10, testLogger())
 	resultCh := make(chan SendResult, 10)
-	w := NewWorker(ch, q, resultCh, testLogger())
+	w := NewWorker(ch, q, resultCh, 5*time.Second, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -83,7 +84,7 @@ func TestWorker_SendFailure(t *testing.T) {
 	}
 	q := NewQueue("failing-channel", 10, testLogger())
 	resultCh := make(chan SendResult, 10)
-	w := NewWorker(ch, q, resultCh, testLogger())
+	w := NewWorker(ch, q, resultCh, 5*time.Second, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -114,7 +115,7 @@ func TestWorker_MultipleNotifications(t *testing.T) {
 	ch := &mockChannel{name: "multi"}
 	q := NewQueue("multi", 10, testLogger())
 	resultCh := make(chan SendResult, 10)
-	w := NewWorker(ch, q, resultCh, testLogger())
+	w := NewWorker(ch, q, resultCh, 5*time.Second, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -127,7 +128,7 @@ func TestWorker_MultipleNotifications(t *testing.T) {
 	}()
 
 	for i := range 3 {
-		require.NoError(t, q.Enqueue(ctx, testNotification("g-"+string(rune('a'+i)))))
+		require.NoError(t, q.Enqueue(ctx, testNotification(fmt.Sprintf("g-%d", i))))
 	}
 
 	results := make([]SendResult, 0, 3)
@@ -154,7 +155,7 @@ func TestWorker_GracefulShutdown(t *testing.T) {
 	ch := &mockChannel{name: "shutdown-test"}
 	q := NewQueue("shutdown-test", 10, testLogger())
 	resultCh := make(chan SendResult, 10)
-	w := NewWorker(ch, q, resultCh, testLogger())
+	w := NewWorker(ch, q, resultCh, 5*time.Second, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -179,7 +180,7 @@ func TestWorker_QueueClose_StopsWorker(t *testing.T) {
 	ch := &mockChannel{name: "close-test"}
 	q := NewQueue("close-test", 10, testLogger())
 	resultCh := make(chan SendResult, 10)
-	w := NewWorker(ch, q, resultCh, testLogger())
+	w := NewWorker(ch, q, resultCh, 5*time.Second, testLogger())
 
 	ctx := context.Background()
 
@@ -198,4 +199,42 @@ func TestWorker_QueueClose_StopsWorker(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker did not stop after queue close")
 	}
+}
+
+func TestWorker_SendTimeout(t *testing.T) {
+	ch := &mockChannel{
+		name: "slow-channel",
+		sendFn: func(ctx context.Context, _ *Notification) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	q := NewQueue("slow-channel", 10, testLogger())
+	resultCh := make(chan SendResult, 10)
+	w := NewWorker(ch, q, resultCh, 100*time.Millisecond, testLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		w.Run(ctx)
+	}()
+
+	require.NoError(t, q.Enqueue(ctx, testNotification("slow-g1")))
+
+	select {
+	case r := <-resultCh:
+		assert.Equal(t, "slow-g1", r.GroupKey)
+		assert.Equal(t, "slow-channel", r.Channel)
+		assert.Error(t, r.Err)
+		assert.ErrorIs(t, r.Err, context.DeadlineExceeded)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for result")
+	}
+
+	cancel()
+	wg.Wait()
 }

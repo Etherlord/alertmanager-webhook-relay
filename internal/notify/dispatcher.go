@@ -74,7 +74,7 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 	for _, ch := range d.channels {
 		q := NewQueue(ch.Name(), d.cfg.QueueSize, d.logger)
 		queues[ch.Name()] = q
-		w := NewWorker(ch, q, resultCh, d.logger)
+		w := NewWorker(ch, q, resultCh, d.cfg.SendTimeout, d.logger)
 		workers = append(workers, w)
 	}
 
@@ -133,7 +133,7 @@ func (d *Dispatcher) poll(ctx context.Context, queues map[string]*Queue, resultC
 
 	for i := range groups {
 		n := NewNotification(&groups[i])
-		d.fanOutAndCollect(ctx, &n, queues, resultCh)
+		d.fanOutAndCollect(ctx, n, queues, resultCh)
 	}
 }
 
@@ -172,6 +172,13 @@ func (d *Dispatcher) fanOutAndCollect(
 	for range enqueued {
 		select {
 		case r := <-resultCh:
+			if r.GroupKey != n.GroupKey {
+				d.logger.Error("result group key mismatch",
+					"expected", n.GroupKey,
+					"got", r.GroupKey,
+					"channel", r.Channel,
+				)
+			}
 			if r.Err != nil {
 				d.logger.Warn("channel delivery failed",
 					"channel", r.Channel,

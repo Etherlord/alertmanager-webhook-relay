@@ -23,8 +23,8 @@ type Notification struct {
 }
 
 // NewNotification creates a Notification from an AlertGroup.
-func NewNotification(group *alerts.AlertGroup) Notification {
-	return Notification{
+func NewNotification(group *alerts.AlertGroup) *Notification {
+	return &Notification{
 		GroupKey:          group.GroupKey,
 		Status:            group.Status,
 		Receiver:          group.Receiver,

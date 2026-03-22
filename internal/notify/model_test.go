@@ -40,6 +40,7 @@ func TestNewNotification(t *testing.T) {
 	n := NewNotification(&group)
 	after := time.Now()
 
+	require.NotNil(t, n)
 	assert.Equal(t, group.GroupKey, n.GroupKey)
 	assert.Equal(t, group.Status, n.Status)
 	assert.Equal(t, group.Receiver, n.Receiver)

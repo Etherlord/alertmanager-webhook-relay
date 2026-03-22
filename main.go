@@ -88,6 +88,16 @@ func run() error {
 		dispatcherDone <- dispatcher.Run(dispatcherCtx)
 	}()
 
+	cleanup := func() {
+		dispatcherCancel()
+		if err := <-dispatcherDone; err != nil {
+			logger.Error("dispatcher error", "error", err)
+		}
+		if err := store.Close(); err != nil {
+			logger.Error("failed to close store", "error", err)
+		}
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		if err := srv.Start(ctx); err != nil {
@@ -97,11 +107,7 @@ func run() error {
 
 	select {
 	case err := <-errCh:
-		dispatcherCancel()
-		<-dispatcherDone
-		if closeErr := store.Close(); closeErr != nil {
-			logger.Error("failed to close store", "error", closeErr)
-		}
+		cleanup()
 		return err
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
@@ -113,26 +119,12 @@ func run() error {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", "error", err)
-		dispatcherCancel()
-		<-dispatcherDone
-		if closeErr := store.Close(); closeErr != nil {
-			logger.Error("failed to close store", "error", closeErr)
-		}
+		cleanup()
 		return err
 	}
 
 	logger.Info("stopping dispatcher")
-	dispatcherCancel()
-	if err := <-dispatcherDone; err != nil {
-		logger.Error("dispatcher error", "error", err)
-	}
-	logger.Info("dispatcher stopped")
-
-	if err := store.Close(); err != nil {
-		logger.Error("failed to close store", "error", err)
-		return err
-	}
-
+	cleanup()
 	logger.Info("shutdown complete")
 
 	return nil

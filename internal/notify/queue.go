@@ -84,12 +84,10 @@ func (q *Queue) Enqueue(ctx context.Context, n *Notification) error {
 // Blocks until a notification is available, the context is cancelled, or the queue is closed.
 // After Close(), remaining items can still be dequeued until the queue is drained.
 func (q *Queue) Dequeue(ctx context.Context) (*Notification, error) {
-	// First try non-blocking read to drain remaining items (even after close).
+	// Non-blocking read to drain remaining items (even after close).
+	// q.ch is never closed (only q.done is), so no ok-check needed.
 	select {
-	case n, ok := <-q.ch:
-		if !ok {
-			return nil, ErrQueueClosed
-		}
+	case n := <-q.ch:
 		q.logger.Debug("notification dequeued",
 			"queue_name", q.name,
 			"group_key", n.GroupKey,
@@ -101,10 +99,7 @@ func (q *Queue) Dequeue(ctx context.Context) (*Notification, error) {
 
 	// Blocking wait.
 	select {
-	case n, ok := <-q.ch:
-		if !ok {
-			return nil, ErrQueueClosed
-		}
+	case n := <-q.ch:
 		q.logger.Debug("notification dequeued",
 			"queue_name", q.name,
 			"group_key", n.GroupKey,
@@ -116,10 +111,7 @@ func (q *Queue) Dequeue(ctx context.Context) (*Notification, error) {
 	case <-q.done:
 		// After close signal, drain remaining items.
 		select {
-		case n, ok := <-q.ch:
-			if !ok {
-				return nil, ErrQueueClosed
-			}
+		case n := <-q.ch:
 			return n, nil
 		default:
 			return nil, ErrQueueClosed
