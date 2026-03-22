@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"alertmanager-webhook-relay/internal/alerts"
+	"alertmanager-webhook-relay/internal/channel/pachca"
 	"alertmanager-webhook-relay/internal/config"
 	"alertmanager-webhook-relay/internal/logging"
 	"alertmanager-webhook-relay/internal/notify"
@@ -57,9 +58,15 @@ func run() error {
 	alertSvc := alerts.NewService(store, logger, cfg.MaxAlertsPerPayload)
 	alertHandler := alerts.HandleWebhook(logger, alertSvc, int64(cfg.MaxPayloadSize))
 
-	// Build notification dispatcher.
-	// Empty channels list — concrete channels (Pachca, Email) added in future milestones.
+	// Build notification channels.
 	var channels []notify.Channel
+
+	if cfg.Pachca.Enabled {
+		channels = append(channels, pachca.NewChannel(cfg.Pachca.BaseURL, cfg.Pachca.Token, cfg.Pachca.ChatID))
+		logger.Info("pachca channel enabled", "chat_id", cfg.Pachca.ChatID)
+	} else {
+		logger.Info("pachca channel disabled")
+	}
 	dispatcher := notify.NewDispatcher(store, channels, notify.DispatcherConfig{
 		PollInterval: cfg.NotifyPollInterval,
 		BatchSize:    cfg.NotifyBatchSize,
