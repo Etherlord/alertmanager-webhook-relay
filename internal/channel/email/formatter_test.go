@@ -16,7 +16,7 @@ import (
 
 func firingNotification() *notify.Notification {
 	return &notify.Notification{
-		GroupKey:  "test-group-key",
+		GroupKey: "test-group-key",
 		Status:   alerts.StatusFiring,
 		Receiver: "webhook",
 		Alerts: []alerts.Alert{
@@ -38,7 +38,7 @@ func firingNotification() *notify.Notification {
 
 func resolvedNotification() *notify.Notification {
 	return &notify.Notification{
-		GroupKey:  "test-group-key",
+		GroupKey: "test-group-key",
 		Status:   alerts.StatusResolved,
 		Receiver: "webhook",
 		Alerts: []alerts.Alert{

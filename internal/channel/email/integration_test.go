@@ -45,11 +45,11 @@ type mailpitMessagesResponse struct {
 }
 
 type mailpitMessage struct {
-	ID      string            `json:"ID"`
-	Subject string            `json:"Subject"`
-	From    mailpitAddress    `json:"From"`
-	To      []mailpitAddress  `json:"To"`
-	Snippet string            `json:"Snippet"`
+	ID      string           `json:"ID"`
+	Subject string           `json:"Subject"`
+	From    mailpitAddress   `json:"From"`
+	To      []mailpitAddress `json:"To"`
+	Snippet string           `json:"Snippet"`
 }
 
 type mailpitAddress struct {
@@ -105,7 +105,7 @@ func TestIntegration_EmailChannel_SendFiring(t *testing.T) {
 	ch := NewChannel(sender, []string{"oncall@example.com"}, "[Alert]", logger)
 
 	n := &notify.Notification{
-		GroupKey:  "integration-test",
+		GroupKey: "integration-test",
 		Status:   alerts.StatusFiring,
 		Receiver: "webhook",
 		Alerts: []alerts.Alert{
@@ -160,7 +160,7 @@ func TestIntegration_EmailChannel_SendResolved(t *testing.T) {
 	ch := NewChannel(sender, []string{"oncall@example.com", "dev@example.com"}, "[PROD]", logger)
 
 	n := &notify.Notification{
-		GroupKey:  "integration-test-resolved",
+		GroupKey: "integration-test-resolved",
 		Status:   alerts.StatusResolved,
 		Receiver: "webhook",
 		Alerts: []alerts.Alert{
