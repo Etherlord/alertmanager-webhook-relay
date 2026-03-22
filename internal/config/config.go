@@ -228,6 +228,10 @@ func (c *Config) normalize() {
 		slog.Debug("нормализация: DATABASE_DSN", "действие", "TrimSpace")
 		c.DatabaseDSN = trimmed
 	}
+	if trimmed := strings.TrimSpace(c.Pachca.BaseURL); trimmed != c.Pachca.BaseURL {
+		slog.Debug("нормализация: PACHCA_BASE_URL", "действие", "TrimSpace")
+		c.Pachca.BaseURL = trimmed
+	}
 	if trimmed := strings.TrimRight(c.Pachca.BaseURL, "/"); trimmed != c.Pachca.BaseURL {
 		slog.Debug("нормализация: PACHCA_BASE_URL", "до", c.Pachca.BaseURL, "после", trimmed)
 		c.Pachca.BaseURL = trimmed

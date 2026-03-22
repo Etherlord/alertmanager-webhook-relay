@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultHTTPTimeout = 10 * time.Second
-	maxResponseSize    = 1 << 20 // 1 MB
+	maxErrorBodySize   = 8 << 10 // 8 KB
 	messagesPath       = "/api/shared/v1/messages"
 )
 
@@ -33,19 +33,21 @@ type Client struct {
 	httpClient *http.Client
 	baseURL    string
 	token      string
+	logger     *slog.Logger
 }
 
 // NewClient creates a new Pachca API client.
-func NewClient(baseURL, token string, opts ...Option) *Client {
+func NewClient(baseURL, token string, logger *slog.Logger, opts ...Option) *Client {
 	c := &Client{
 		httpClient: &http.Client{Timeout: defaultHTTPTimeout},
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		token:      token,
+		logger:     logger,
 	}
 	for _, opt := range opts {
 		opt(c)
 	}
-	slog.Debug("pachca client created", "base_url", c.baseURL)
+	c.logger.Debug("pachca client created", "base_url", c.baseURL)
 	return c
 }
 
@@ -62,7 +64,7 @@ type messageBody struct {
 
 // SendMessage sends a message to a Pachca chat.
 func (c *Client) SendMessage(ctx context.Context, chatID int, content string) error {
-	slog.Debug("sending pachca message", "chat_id", chatID, "content_len", len(content))
+	c.logger.Debug("sending pachca message", "chat_id", chatID, "content_len", len(content))
 
 	payload := messagePayload{
 		Message: messageBody{
@@ -95,8 +97,8 @@ func (c *Client) SendMessage(ctx context.Context, chatID int, content string) er
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Read limited error body for diagnostics, then drain for connection reuse.
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-		slog.Warn("pachca API error",
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
+		c.logger.Warn("pachca API error",
 			"status_code", resp.StatusCode,
 			"response_body", string(errBody),
 		)
@@ -106,6 +108,6 @@ func (c *Client) SendMessage(ctx context.Context, chatID int, content string) er
 	// Drain body for TCP connection reuse.
 	_, _ = io.Copy(io.Discard, resp.Body)
 
-	slog.Debug("pachca message sent", "chat_id", chatID, "status_code", resp.StatusCode)
+	c.logger.Debug("pachca message sent", "chat_id", chatID, "status_code", resp.StatusCode)
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -40,7 +41,7 @@ func TestClient_SendMessage_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-token", WithHTTPClient(srv.Client()))
+	client := NewClient(srv.URL, "test-token", slog.Default(), WithHTTPClient(srv.Client()))
 	err := client.SendMessage(context.Background(), 42, "Hello, Pachca!")
 
 	require.NoError(t, err)
@@ -73,7 +74,7 @@ func TestClient_SendMessage_Non2xxStatus(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			client := NewClient(srv.URL, "test-token", WithHTTPClient(srv.Client()))
+			client := NewClient(srv.URL, "test-token", slog.Default(), WithHTTPClient(srv.Client()))
 			err := client.SendMessage(context.Background(), 42, "Hello")
 
 			assert.Error(t, err)
@@ -93,7 +94,7 @@ func TestClient_SendMessage_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	client := NewClient(srv.URL, "test-token", WithHTTPClient(srv.Client()))
+	client := NewClient(srv.URL, "test-token", slog.Default(), WithHTTPClient(srv.Client()))
 	err := client.SendMessage(ctx, 42, "Hello")
 
 	assert.Error(t, err)
@@ -106,21 +107,21 @@ func TestClient_SendMessage_200AlsoAccepted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-token", WithHTTPClient(srv.Client()))
+	client := NewClient(srv.URL, "test-token", slog.Default(), WithHTTPClient(srv.Client()))
 	err := client.SendMessage(context.Background(), 42, "Hello")
 
 	assert.NoError(t, err)
 }
 
 func TestNewClient_DefaultHTTPClient(t *testing.T) {
-	client := NewClient("https://api.pachca.com", "test-token")
+	client := NewClient("https://api.pachca.com", "test-token", slog.Default())
 	assert.NotNil(t, client)
 	t.Logf("default client created with base_url=%s", "https://api.pachca.com")
 }
 
 func TestNewClient_WithHTTPClient(t *testing.T) {
 	custom := &http.Client{}
-	client := NewClient("https://api.pachca.com", "test-token", WithHTTPClient(custom))
+	client := NewClient("https://api.pachca.com", "test-token", slog.Default(), WithHTTPClient(custom))
 	assert.NotNil(t, client)
 }
 
@@ -134,7 +135,7 @@ func TestClient_SendMessage_BaseURLTrailingSlash(t *testing.T) {
 	defer srv.Close()
 
 	// Base URL with trailing slash
-	client := NewClient(srv.URL+"/", "test-token", WithHTTPClient(srv.Client()))
+	client := NewClient(srv.URL+"/", "test-token", slog.Default(), WithHTTPClient(srv.Client()))
 	err := client.SendMessage(context.Background(), 42, "Hello")
 
 	require.NoError(t, err)

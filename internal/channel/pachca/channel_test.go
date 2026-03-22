@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestChannel_Name(t *testing.T) {
-	ch := NewChannel("https://api.pachca.com", "token", 1)
+	ch := NewChannel("https://api.pachca.com", "token", 1, slog.Default())
 	assert.Equal(t, "pachca", ch.Name())
 }
 
@@ -30,7 +31,7 @@ func TestChannel_Send_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ch := NewChannel(srv.URL, "test-token", 42, WithHTTPClient(srv.Client()))
+	ch := NewChannel(srv.URL, "test-token", 42, slog.Default(), WithHTTPClient(srv.Client()))
 
 	n := &notify.Notification{
 		Status:      alerts.StatusFiring,
@@ -68,7 +69,7 @@ func TestChannel_Send_APIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ch := NewChannel(srv.URL, "test-token", 42, WithHTTPClient(srv.Client()))
+	ch := NewChannel(srv.URL, "test-token", 42, slog.Default(), WithHTTPClient(srv.Client()))
 
 	n := &notify.Notification{
 		Status:      alerts.StatusFiring,

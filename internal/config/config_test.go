@@ -972,6 +972,15 @@ func TestLoad_PachcaNormalization(t *testing.T) {
 		check  func(t *testing.T, cfg *Config)
 	}{
 		{
+			name:   "BaseURL whitespace trimmed",
+			envKey: "PACHCA_BASE_URL",
+			env:    " https://api.pachca.com ",
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "https://api.pachca.com", cfg.Pachca.BaseURL)
+			},
+		},
+		{
 			name:   "BaseURL trailing slash trimmed",
 			envKey: "PACHCA_BASE_URL",
 			env:    "https://api.pachca.com/",

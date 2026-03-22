@@ -62,7 +62,7 @@ func run() error {
 	var channels []notify.Channel
 
 	if cfg.Pachca.Enabled {
-		channels = append(channels, pachca.NewChannel(cfg.Pachca.BaseURL, cfg.Pachca.Token, cfg.Pachca.ChatID))
+		channels = append(channels, pachca.NewChannel(cfg.Pachca.BaseURL, cfg.Pachca.Token, cfg.Pachca.ChatID, logger))
 		logger.Info("pachca channel enabled", "chat_id", cfg.Pachca.ChatID)
 	} else {
 		logger.Info("pachca channel disabled")

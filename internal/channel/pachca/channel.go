@@ -11,14 +11,16 @@ import (
 type Channel struct {
 	client *Client
 	chatID int
+	logger *slog.Logger
 }
 
 // NewChannel creates a new Pachca notification channel.
-func NewChannel(baseURL, token string, chatID int, opts ...Option) *Channel {
-	slog.Debug("creating pachca channel", "chat_id", chatID, "base_url", baseURL)
+func NewChannel(baseURL, token string, chatID int, logger *slog.Logger, opts ...Option) *Channel {
+	logger.Debug("creating pachca channel", "chat_id", chatID, "base_url", baseURL)
 	return &Channel{
-		client: NewClient(baseURL, token, opts...),
+		client: NewClient(baseURL, token, logger, opts...),
 		chatID: chatID,
+		logger: logger,
 	}
 }
 
@@ -29,7 +31,7 @@ func (ch *Channel) Name() string {
 
 // Send formats the notification and sends it to Pachca.
 func (ch *Channel) Send(ctx context.Context, n *notify.Notification) error {
-	slog.Debug("pachca channel: formatting notification",
+	ch.logger.Debug("pachca channel: formatting notification",
 		"group_key", n.GroupKey,
 		"status", n.Status,
 		"alerts_count", n.AlertsCount,
@@ -37,13 +39,13 @@ func (ch *Channel) Send(ctx context.Context, n *notify.Notification) error {
 
 	content := FormatNotification(n)
 
-	slog.Debug("pachca channel: sending message",
+	ch.logger.Debug("pachca channel: sending message",
 		"chat_id", ch.chatID,
 		"content_len", len(content),
 	)
 
 	if err := ch.client.SendMessage(ctx, ch.chatID, content); err != nil {
-		slog.Error("pachca channel: failed to send notification",
+		ch.logger.Error("pachca channel: failed to send notification",
 			"chat_id", ch.chatID,
 			"group_key", n.GroupKey,
 			"error", err,
@@ -51,7 +53,7 @@ func (ch *Channel) Send(ctx context.Context, n *notify.Notification) error {
 		return err
 	}
 
-	slog.Info("pachca channel: notification sent",
+	ch.logger.Info("pachca channel: notification sent",
 		"chat_id", ch.chatID,
 		"group_key", n.GroupKey,
 		"status", n.Status,
