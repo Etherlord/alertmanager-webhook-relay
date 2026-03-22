@@ -1,13 +1,17 @@
 package email
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"alertmanager-webhook-relay/internal/alerts"
 	"alertmanager-webhook-relay/internal/notify"
+	"alertmanager-webhook-relay/internal/template"
 )
 
 func firingNotification() *notify.Notification {
@@ -207,4 +211,119 @@ func TestFormatBodyDefault_NoLabelsAfterFilter(t *testing.T) {
 	body := FormatBodyDefault(n)
 	// All labels are filtered out — no "Labels:" line.
 	assert.NotContains(t, body, "Labels:")
+}
+
+// --- FuncMap tests ---
+
+func TestDefaultFuncMap_StatusColor(t *testing.T) {
+	funcs := DefaultFuncMap()
+	sc, ok := funcs["statusColor"].(func(any) string)
+	require.True(t, ok)
+
+	assert.Equal(t, "#e74c3c", sc("firing"))
+	assert.Equal(t, "#27ae60", sc("resolved"))
+	assert.Equal(t, "#27ae60", sc(alerts.StatusResolved))
+	assert.Equal(t, "#e74c3c", sc("unknown"))
+}
+
+func TestDefaultFuncMap_Upper(t *testing.T) {
+	funcs := DefaultFuncMap()
+	upper, ok := funcs["upper"].(func(any) string)
+	require.True(t, ok)
+
+	assert.Equal(t, "FIRING", upper("firing"))
+	assert.Equal(t, "RESOLVED", upper(alerts.StatusResolved))
+}
+
+func TestFilterLabels(t *testing.T) {
+	labels := map[string]string{
+		"alertname": "Test",
+		"severity":  "critical",
+		"instance":  "server-1",
+		"job":       "prometheus",
+	}
+
+	filtered := FilterLabels(labels)
+	assert.Len(t, filtered, 2)
+	assert.Equal(t, "server-1", filtered["instance"])
+	assert.Equal(t, "prometheus", filtered["job"])
+	assert.NotContains(t, filtered, "alertname")
+	assert.NotContains(t, filtered, "severity")
+}
+
+func TestFilterLabels_AllFiltered(t *testing.T) {
+	labels := map[string]string{"alertname": "Test", "severity": "warning"}
+	assert.Nil(t, FilterLabels(labels))
+}
+
+// --- TemplateFormatter tests ---
+
+func setupTestTemplate(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "test.html.tmpl"), []byte(content), 0o644)
+	require.NoError(t, err)
+	return dir
+}
+
+func TestTemplateFormatter_FormatBody_HappyPath(t *testing.T) {
+	dir := setupTestTemplate(t, `<p>{{upper .Status}} — {{.AlertsCount}} alerts</p>`)
+
+	engine, err := template.NewEngine(dir, DefaultFuncMap(), testLogger())
+	require.NoError(t, err)
+
+	formatter := NewTemplateFormatter(engine, "test.html.tmpl", testLogger())
+	n := firingNotification()
+
+	body := formatter.FormatBody(n)
+	assert.Contains(t, body, "FIRING")
+	assert.Contains(t, body, "1 alerts")
+
+	t.Logf("template body: %s", body)
+}
+
+func TestTemplateFormatter_FormatBody_FallbackOnError(t *testing.T) {
+	dir := setupTestTemplate(t, `<p>{{.NonExistentMethod}}</p>`)
+
+	engine, err := template.NewEngine(dir, DefaultFuncMap(), testLogger())
+	require.NoError(t, err)
+
+	formatter := NewTemplateFormatter(engine, "test.html.tmpl", testLogger())
+	n := firingNotification()
+
+	body := formatter.FormatBody(n)
+	// Should fall back to FormatBodyDefault.
+	assert.Contains(t, body, "<!DOCTYPE html>")
+	assert.Contains(t, body, "FIRING")
+	assert.Contains(t, body, "HighCPU")
+}
+
+func TestTemplateFormatter_FormatBody_TemplateNotFound(t *testing.T) {
+	dir := setupTestTemplate(t, `<p>exists</p>`)
+
+	engine, err := template.NewEngine(dir, nil, testLogger())
+	require.NoError(t, err)
+
+	formatter := NewTemplateFormatter(engine, "nonexistent.html.tmpl", testLogger())
+	n := firingNotification()
+
+	body := formatter.FormatBody(n)
+	// Should fall back to FormatBodyDefault.
+	assert.Contains(t, body, "<!DOCTYPE html>")
+	assert.Contains(t, body, "HighCPU")
+}
+
+func TestTemplateFormatter_FormatBody_XSSProtection(t *testing.T) {
+	dir := setupTestTemplate(t, `<p>{{index .CommonLabels "alertname"}}</p>`)
+
+	engine, err := template.NewEngine(dir, DefaultFuncMap(), testLogger())
+	require.NoError(t, err)
+
+	formatter := NewTemplateFormatter(engine, "test.html.tmpl", testLogger())
+	n := firingNotification()
+	n.CommonLabels["alertname"] = `<script>alert("xss")</script>`
+
+	body := formatter.FormatBody(n)
+	assert.NotContains(t, body, "<script>")
+	assert.Contains(t, body, "&lt;script&gt;")
 }

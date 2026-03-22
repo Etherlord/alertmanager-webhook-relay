@@ -3,11 +3,15 @@ package email
 import (
 	"fmt"
 	"html"
+	htmltemplate "html/template"
+	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"alertmanager-webhook-relay/internal/alerts"
 	"alertmanager-webhook-relay/internal/notify"
+	"alertmanager-webhook-relay/internal/template"
 )
 
 const timeFormat = "2006-01-02 15:04:05 UTC"
@@ -159,4 +163,70 @@ func countByStatus(alertList []alerts.Alert, status alerts.AlertStatus) int {
 		}
 	}
 	return count
+}
+
+// DefaultFuncMap returns the template.FuncMap used by email templates.
+func DefaultFuncMap() htmltemplate.FuncMap {
+	return htmltemplate.FuncMap{
+		"formatTime":   func(t time.Time) string { return t.UTC().Format(timeFormat) },
+		"statusColor":  statusColorFunc,
+		"upper":        func(s any) string { return strings.ToUpper(fmt.Sprint(s)) },
+		"join":         strings.Join,
+		"filterLabels": FilterLabels,
+		"add":          func(a, b int) int { return a + b },
+	}
+}
+
+// statusColorFunc returns a CSS color for the given alert status.
+func statusColorFunc(status any) string {
+	s := fmt.Sprint(status)
+	if strings.EqualFold(s, string(alerts.StatusResolved)) {
+		return "#27ae60"
+	}
+	return "#e74c3c"
+}
+
+// FilterLabels returns a sorted map excluding alertname and severity.
+func FilterLabels(labels map[string]string) map[string]string {
+	result := make(map[string]string)
+	for k, v := range labels {
+		if _, skip := filteredLabels[k]; !skip {
+			result[k] = v
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// TemplateFormatter renders notifications using the template engine,
+// falling back to FormatBodyDefault on error.
+type TemplateFormatter struct {
+	engine       *template.Engine
+	templateName string
+	logger       *slog.Logger
+}
+
+// NewTemplateFormatter creates a new TemplateFormatter.
+func NewTemplateFormatter(engine *template.Engine, templateName string, logger *slog.Logger) *TemplateFormatter {
+	return &TemplateFormatter{
+		engine:       engine,
+		templateName: templateName,
+		logger:       logger,
+	}
+}
+
+// FormatBody renders the notification using the template engine.
+// Falls back to FormatBodyDefault if rendering fails.
+func (f *TemplateFormatter) FormatBody(n *notify.Notification) string {
+	result, err := f.engine.Render(f.templateName, n)
+	if err != nil {
+		f.logger.Warn("template render failed, using fallback",
+			"template", f.templateName,
+			"error", err,
+		)
+		return FormatBodyDefault(n)
+	}
+	return result
 }

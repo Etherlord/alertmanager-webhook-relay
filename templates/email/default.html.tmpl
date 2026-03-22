@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;margin:0;padding:20px;background:#f5f5f5;">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">
+
+{{/* Status banner */}}
+<div style="background:{{statusColor .Status}};color:#fff;padding:16px 20px;font-size:18px;font-weight:bold;">
+{{if eq (upper .Status) "RESOLVED"}}✅{{else}}🔥{{end}} [{{upper .Status}}:{{.AlertsCount}}] {{index .CommonLabels "alertname"}}
+{{- with index .CommonLabels "severity"}} <span style="font-weight:normal;opacity:0.8;">({{.}})</span>{{end}}
+</div>
+
+{{/* Alertmanager link */}}
+{{- if .ExternalURL}}
+<div style="padding:8px 20px;background:#f8f9fa;border-bottom:1px solid #e9ecef;font-size:13px;">
+Alertmanager: <a href="{{.ExternalURL}}">{{.ExternalURL}}</a>
+</div>
+{{- end}}
+
+{{/* Alerts */}}
+<div style="padding:20px;">
+{{range $i, $a := .Alerts}}
+{{- if $i}}<hr style="border:none;border-top:1px solid #e9ecef;margin:16px 0;">{{end}}
+<div style="margin-bottom:8px;font-weight:bold;font-size:15px;">
+{{if eq (upper $a.Status) "RESOLVED"}}🟢{{else}}🔴{{end}} Alert {{add $i 1}} — {{upper $a.Status}}
+</div>
+
+{{- with index $a.Annotations "summary"}}
+<div style="margin-bottom:4px;"><strong>Summary:</strong> {{.}}</div>
+{{- end}}
+
+{{- with index $a.Annotations "description"}}
+<div style="margin-bottom:4px;"><strong>Description:</strong> {{.}}</div>
+{{- end}}
+
+<div style="margin-bottom:4px;color:#6c757d;font-size:13px;">Started: {{formatTime $a.StartsAt}}</div>
+
+{{- if and (eq (upper $a.Status) "RESOLVED") (not $a.EndsAt.IsZero)}}
+<div style="margin-bottom:4px;color:#6c757d;font-size:13px;">Ended: {{formatTime $a.EndsAt}}</div>
+{{- end}}
+
+{{- with filterLabels $a.Labels}}
+<div style="margin-bottom:4px;font-size:13px;">Labels: {{range $k, $v := .}}<code>{{$k}}={{$v}}</code> {{end}}</div>
+{{- end}}
+
+{{- if $a.GeneratorURL}}
+<div style="margin-top:4px;font-size:13px;"><a href="{{$a.GeneratorURL}}">Source</a></div>
+{{- end}}
+{{end}}
+</div>
+
+{{/* Truncated alerts */}}
+{{- if gt .TruncatedAlerts 0}}
+<div style="padding:12px 20px;background:#fff3cd;color:#856404;font-size:13px;">⚠️ +{{.TruncatedAlerts}} alerts truncated</div>
+{{- end}}
+
+</div>
+</body>
+</html>

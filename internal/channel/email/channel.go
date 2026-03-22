@@ -8,26 +8,37 @@ import (
 	"alertmanager-webhook-relay/internal/notify"
 )
 
+// BodyFormatter formats notification bodies.
+type BodyFormatter interface {
+	FormatBody(n *notify.Notification) string
+}
+
 // Channel implements notify.Channel for Email.
 type Channel struct {
 	sender        *Sender
 	to            []string
 	subjectPrefix string
+	formatter     BodyFormatter
 	logger        *slog.Logger
 }
 
 // NewChannel creates a new Email notification channel.
-func NewChannel(sender *Sender, to []string, subjectPrefix string, logger *slog.Logger) *Channel {
+// If formatter is nil, FormatBodyDefault is used.
+func NewChannel(sender *Sender, to []string, subjectPrefix string, logger *slog.Logger, formatter ...BodyFormatter) *Channel {
 	logger.Debug("creating email channel",
 		"to", to,
 		"subject_prefix", subjectPrefix,
 	)
-	return &Channel{
+	ch := &Channel{
 		sender:        sender,
 		to:            to,
 		subjectPrefix: subjectPrefix,
 		logger:        logger,
 	}
+	if len(formatter) > 0 && formatter[0] != nil {
+		ch.formatter = formatter[0]
+	}
+	return ch
 }
 
 // Name returns the channel name.
@@ -44,7 +55,12 @@ func (ch *Channel) Send(_ context.Context, n *notify.Notification) error {
 	)
 
 	subject := FormatSubject(n, ch.subjectPrefix)
-	body := FormatBodyDefault(n)
+	var body string
+	if ch.formatter != nil {
+		body = ch.formatter.FormatBody(n)
+	} else {
+		body = FormatBodyDefault(n)
+	}
 
 	ch.logger.Debug("email channel: sending message",
 		"to", ch.to,
