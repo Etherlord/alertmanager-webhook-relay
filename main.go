@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"alertmanager-webhook-relay/internal/alerts"
+	"alertmanager-webhook-relay/internal/channel/email"
 	"alertmanager-webhook-relay/internal/channel/pachca"
 	"alertmanager-webhook-relay/internal/config"
 	"alertmanager-webhook-relay/internal/logging"
@@ -66,6 +67,18 @@ func run() error {
 		logger.Info("pachca channel enabled", "chat_id", cfg.Pachca.ChatID)
 	} else {
 		logger.Info("pachca channel disabled")
+	}
+
+	if cfg.Email.Enabled {
+		emailSender := email.NewSender(
+			cfg.Email.SMTPHost, cfg.Email.SMTPPort,
+			cfg.Email.From, cfg.Email.Username, cfg.Email.Password,
+			cfg.Email.TLSMode, logger,
+		)
+		channels = append(channels, email.NewChannel(emailSender, cfg.Email.To, cfg.Email.SubjectPrefix, logger))
+		logger.Info("email channel enabled", "smtp_host", cfg.Email.SMTPHost, "to", cfg.Email.To)
+	} else {
+		logger.Info("email channel disabled")
 	}
 	dispatcher := notify.NewDispatcher(store, channels, notify.DispatcherConfig{
 		PollInterval: cfg.NotifyPollInterval,
