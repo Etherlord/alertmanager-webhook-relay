@@ -12,6 +12,7 @@ import (
 	"alertmanager-webhook-relay/internal/alerts"
 	"alertmanager-webhook-relay/internal/config"
 	"alertmanager-webhook-relay/internal/logging"
+	"alertmanager-webhook-relay/internal/notify"
 	"alertmanager-webhook-relay/internal/server"
 	"alertmanager-webhook-relay/internal/storage/sqlite"
 )
@@ -56,6 +57,16 @@ func run() error {
 	alertSvc := alerts.NewService(store, logger, cfg.MaxAlertsPerPayload)
 	alertHandler := alerts.HandleWebhook(logger, alertSvc, int64(cfg.MaxPayloadSize))
 
+	// Build notification dispatcher.
+	// Empty channels list — concrete channels (Pachca, Email) added in future milestones.
+	var channels []notify.Channel
+	dispatcher := notify.NewDispatcher(store, channels, notify.DispatcherConfig{
+		PollInterval: cfg.NotifyPollInterval,
+		BatchSize:    cfg.NotifyBatchSize,
+		QueueSize:    cfg.NotifyQueueSize,
+		SendTimeout:  cfg.NotifySendTimeout,
+	}, logger)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop() // safe: os.Exit is called in main(), not in run()
 
@@ -67,7 +78,15 @@ func run() error {
 		logger,
 		alertHandler,
 		storeChecker,
+		dispatcher,
 	)
+
+	// Start dispatcher in background goroutine.
+	dispatcherCtx, dispatcherCancel := context.WithCancel(ctx)
+	dispatcherDone := make(chan error, 1)
+	go func() {
+		dispatcherDone <- dispatcher.Run(dispatcherCtx)
+	}()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -78,6 +97,8 @@ func run() error {
 
 	select {
 	case err := <-errCh:
+		dispatcherCancel()
+		<-dispatcherDone
 		if closeErr := store.Close(); closeErr != nil {
 			logger.Error("failed to close store", "error", closeErr)
 		}
@@ -86,16 +107,26 @@ func run() error {
 		logger.Info("shutdown signal received")
 	}
 
+	// Shutdown sequence: srv.Shutdown → dispatcher stops → store.Close
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", "error", err)
+		dispatcherCancel()
+		<-dispatcherDone
 		if closeErr := store.Close(); closeErr != nil {
 			logger.Error("failed to close store", "error", closeErr)
 		}
 		return err
 	}
+
+	logger.Info("stopping dispatcher")
+	dispatcherCancel()
+	if err := <-dispatcherDone; err != nil {
+		logger.Error("dispatcher error", "error", err)
+	}
+	logger.Info("dispatcher stopped")
 
 	if err := store.Close(); err != nil {
 		logger.Error("failed to close store", "error", err)
