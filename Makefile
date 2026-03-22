@@ -1,4 +1,4 @@
-.PHONY: help build test test-race test-cover fmt vet lint check clean migrate-up migrate-down migrate-status migrate-create
+.PHONY: help build test test-race test-cover test-integration fmt vet lint check clean migrate-up migrate-down migrate-status migrate-create
 
 APP_NAME := alertmanager-webhook-relay
 RUN := docker compose --profile tools run --rm dev
@@ -24,6 +24,11 @@ test-race: ## Запустить тесты с race detector
 
 test-cover: ## Запустить тесты с отчётом покрытия
 	$(RUN) sh -c 'go test -cover -coverprofile=coverage.out ./... && go tool cover -html=coverage.out -o coverage.html'
+
+test-integration: ## Запустить интеграционные тесты (Mailpit)
+	docker compose --profile test up -d --wait mailpit
+	docker compose --profile tools --profile test run --rm dev go test -tags=integration -count=1 -v ./...
+	docker compose --profile test stop mailpit
 
 ## Качество кода
 
