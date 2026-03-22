@@ -1402,6 +1402,7 @@ func TestLoad_InvalidEmailSMTPHost(t *testing.T) {
 		value       string
 		errContains string
 	}{
+		{"whitespace only", "   ", "не может быть пустым"},
 		{"too long", strings.Repeat("a", 254), "превышает максимум"},
 		{"control chars", "mail\x01.example.com", "управляющие символы"},
 		{"shell expansion", "mail$(whoami).example.com", "опасную последовательность"},
@@ -1434,6 +1435,8 @@ func TestLoad_InvalidEmailSubjectPrefix(t *testing.T) {
 	}{
 		{"too long", strings.Repeat("A", 129), "превышает максимум"},
 		{"control chars", "[Alert\x01]", "управляющие символы"},
+		{"shell expansion", "[Alert$(whoami)]", "опасную последовательность"},
+		{"template injection", "[{{.Alert}}]", "опасную последовательность"},
 	}
 
 	for _, tt := range tests {
@@ -1450,6 +1453,37 @@ func TestLoad_InvalidEmailSubjectPrefix(t *testing.T) {
 			}
 
 			t.Logf("EMAIL_SUBJECT_PREFIX=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidEmailUsername(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		errContains string
+	}{
+		{"too long", strings.Repeat("a", 257), "превышает максимум"},
+		{"control chars", "user\x01name", "управляющие символы"},
+		{"shell expansion", "$(whoami)", "опасную последовательность"},
+		{"template injection", "{{.User}}", "опасную последовательность"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_USERNAME", tt.value)
+			t.Setenv("EMAIL_PASSWORD", "valid-pass")
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+
+			t.Logf("EMAIL_USERNAME=%q → error: %v", tt.value, err)
 		})
 	}
 }

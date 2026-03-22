@@ -49,6 +49,7 @@ const (
 	defaultEmailSubjectPrefix = "[Alert]"
 
 	maxEmailPasswordLen      = 512
+	maxEmailUsernameLen      = 256
 	maxEmailSubjectPrefixLen = 128
 	maxEmailSMTPHostLen      = 253 // RFC 1035
 
@@ -569,7 +570,10 @@ func (c *Config) validatePachca() error {
 
 // validateEmail checks all Email channel configuration constraints.
 func (c *Config) validateEmail() error {
-	// SMTPHost: not empty (guaranteed by Enabled trigger), length, control chars, dangerous
+	// SMTPHost: empty (after TrimSpace), length, control chars, dangerous
+	if c.Email.SMTPHost == "" {
+		return fmt.Errorf("EMAIL_SMTP_HOST не может быть пустым: %w", ErrInvalidConfig)
+	}
 	if len(c.Email.SMTPHost) > maxEmailSMTPHostLen {
 		return fmt.Errorf("EMAIL_SMTP_HOST длиной %d превышает максимум %d: %w",
 			len(c.Email.SMTPHost), maxEmailSMTPHostLen, ErrInvalidConfig)
@@ -625,13 +629,30 @@ func (c *Config) validateEmail() error {
 		}
 	}
 
-	// SubjectPrefix: length, control chars
+	// SubjectPrefix: length, control chars, dangerous sequences
 	if len(c.Email.SubjectPrefix) > maxEmailSubjectPrefixLen {
 		return fmt.Errorf("EMAIL_SUBJECT_PREFIX длиной %d превышает максимум %d: %w",
 			len(c.Email.SubjectPrefix), maxEmailSubjectPrefixLen, ErrInvalidConfig)
 	}
 	if containsControlChars(c.Email.SubjectPrefix) {
 		return fmt.Errorf("EMAIL_SUBJECT_PREFIX содержит управляющие символы: %w", ErrInvalidConfig)
+	}
+	if found, desc := containsDangerousSequence(c.Email.SubjectPrefix); found {
+		return fmt.Errorf("EMAIL_SUBJECT_PREFIX содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
+	}
+
+	// Username: length, control chars, dangerous sequences (only if set)
+	if c.Email.Username != "" {
+		if len(c.Email.Username) > maxEmailUsernameLen {
+			return fmt.Errorf("EMAIL_USERNAME длиной %d превышает максимум %d: %w",
+				len(c.Email.Username), maxEmailUsernameLen, ErrInvalidConfig)
+		}
+		if containsControlChars(c.Email.Username) {
+			return fmt.Errorf("EMAIL_USERNAME содержит управляющие символы: %w", ErrInvalidConfig)
+		}
+		if found, desc := containsDangerousSequence(c.Email.Username); found {
+			return fmt.Errorf("EMAIL_USERNAME содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
+		}
 	}
 
 	// Cross-field: Username ↔ Password (both or neither)
