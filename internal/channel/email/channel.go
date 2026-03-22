@@ -47,7 +47,7 @@ func (ch *Channel) Name() string {
 }
 
 // Send formats the notification and sends it via email.
-func (ch *Channel) Send(_ context.Context, n *notify.Notification) error {
+func (ch *Channel) Send(ctx context.Context, n *notify.Notification) error {
 	ch.logger.Debug("email channel: formatting notification",
 		"group_key", n.GroupKey,
 		"status", n.Status,
@@ -68,7 +68,7 @@ func (ch *Channel) Send(_ context.Context, n *notify.Notification) error {
 		"body_len", len(body),
 	)
 
-	if err := ch.sender.Send(ch.to, subject, body); err != nil {
+	if err := ch.sender.Send(ctx, ch.to, subject, body); err != nil {
 		ch.logger.Error("email channel: failed to send notification",
 			"to", ch.to,
 			"group_key", n.GroupKey,

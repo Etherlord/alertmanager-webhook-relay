@@ -135,21 +135,14 @@ func writeAlertHTML(b *strings.Builder, num int, a *alerts.Alert) {
 
 // writeLabelsHTML writes filtered and sorted labels as an HTML line.
 func writeLabelsHTML(b *strings.Builder, labels map[string]string) {
-	keys := make([]string, 0, len(labels))
-	for k := range labels {
-		if _, skip := filteredLabels[k]; !skip {
-			keys = append(keys, k)
-		}
-	}
-	if len(keys) == 0 {
+	pairs := FilterLabels(labels)
+	if len(pairs) == 0 {
 		return
 	}
 
-	sort.Strings(keys)
-
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("<code>%s=%s</code>", html.EscapeString(k), html.EscapeString(labels[k])))
+	parts := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		parts = append(parts, fmt.Sprintf("<code>%s=%s</code>", html.EscapeString(p.Key), html.EscapeString(p.Value)))
 	}
 	fmt.Fprintf(b, `<div style="margin-bottom:4px;font-size:13px;">Labels: %s</div>`, strings.Join(parts, " "))
 }
@@ -186,18 +179,25 @@ func statusColorFunc(status any) string {
 	return "#e74c3c"
 }
 
-// FilterLabels returns a sorted map excluding alertname and severity.
-func FilterLabels(labels map[string]string) map[string]string {
-	result := make(map[string]string)
+// LabelPair is a key-value pair for deterministic label output in templates.
+type LabelPair struct {
+	Key   string
+	Value string
+}
+
+// FilterLabels returns sorted label pairs excluding alertname and severity.
+func FilterLabels(labels map[string]string) []LabelPair {
+	pairs := make([]LabelPair, 0, len(labels))
 	for k, v := range labels {
 		if _, skip := filteredLabels[k]; !skip {
-			result[k] = v
+			pairs = append(pairs, LabelPair{Key: k, Value: v})
 		}
 	}
-	if len(result) == 0 {
+	if len(pairs) == 0 {
 		return nil
 	}
-	return result
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].Key < pairs[j].Key })
+	return pairs
 }
 
 // TemplateFormatter renders notifications using the template engine,

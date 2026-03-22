@@ -244,11 +244,10 @@ func TestFilterLabels(t *testing.T) {
 	}
 
 	filtered := FilterLabels(labels)
-	assert.Len(t, filtered, 2)
-	assert.Equal(t, "server-1", filtered["instance"])
-	assert.Equal(t, "prometheus", filtered["job"])
-	assert.NotContains(t, filtered, "alertname")
-	assert.NotContains(t, filtered, "severity")
+	require.Len(t, filtered, 2)
+	// Sorted by key.
+	assert.Equal(t, LabelPair{Key: "instance", Value: "server-1"}, filtered[0])
+	assert.Equal(t, LabelPair{Key: "job", Value: "prometheus"}, filtered[1])
 }
 
 func TestFilterLabels_AllFiltered(t *testing.T) {

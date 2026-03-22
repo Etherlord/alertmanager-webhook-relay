@@ -127,12 +127,12 @@ func TestIntegration_EmailChannel_SendFiring(t *testing.T) {
 	err := ch.Send(t.Context(), n)
 	require.NoError(t, err)
 
-	// Small delay for Mailpit to process.
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify message was received.
-	msgs := getMailpitMessages(t)
-	require.Equal(t, 1, msgs.Total, "expected exactly 1 message")
+	// Poll for Mailpit to process the message.
+	var msgs mailpitMessagesResponse
+	require.Eventually(t, func() bool {
+		msgs = getMailpitMessages(t)
+		return msgs.Total == 1
+	}, 5*time.Second, 100*time.Millisecond, "expected exactly 1 message")
 
 	msg := msgs.Messages[0]
 	assert.Contains(t, msg.Subject, "[Alert] [FIRING:1] HighCPU (webhook)")
@@ -183,10 +183,12 @@ func TestIntegration_EmailChannel_SendResolved(t *testing.T) {
 	err := ch.Send(t.Context(), n)
 	require.NoError(t, err)
 
-	time.Sleep(500 * time.Millisecond)
-
-	msgs := getMailpitMessages(t)
-	require.Equal(t, 1, msgs.Total)
+	// Poll for Mailpit to process the message.
+	var msgs mailpitMessagesResponse
+	require.Eventually(t, func() bool {
+		msgs = getMailpitMessages(t)
+		return msgs.Total == 1
+	}, 5*time.Second, 100*time.Millisecond, "expected exactly 1 message")
 
 	msg := msgs.Messages[0]
 	assert.Contains(t, msg.Subject, "[PROD] [RESOLVED:1] DiskFull (webhook)")

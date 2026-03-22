@@ -40,7 +40,7 @@ Alertmanager: <a href="{{.ExternalURL}}">{{.ExternalURL}}</a>
 {{- end}}
 
 {{- with filterLabels $a.Labels}}
-<div style="margin-bottom:4px;font-size:13px;">Labels: {{range $k, $v := .}}<code>{{$k}}={{$v}}</code> {{end}}</div>
+<div style="margin-bottom:4px;font-size:13px;">Labels: {{range .}}<code>{{.Key}}={{.Value}}</code> {{end}}</div>
 {{- end}}
 
 {{- if $a.GeneratorURL}}

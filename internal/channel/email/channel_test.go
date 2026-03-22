@@ -28,7 +28,7 @@ func TestChannel_Send_HappyPath(t *testing.T) {
 	}
 
 	dialer := &mockDialer{
-		dialFn: func(_ string) (SMTPClient, error) { return client, nil },
+		dialFn: func(_ context.Context, _ string) (SMTPClient, error) { return client, nil },
 	}
 
 	sender := NewSender("mail.example.com", 25, "alerts@example.com", "", "", "none", testLogger(), WithDialer(dialer))
@@ -56,7 +56,7 @@ func TestChannel_Send_Error(t *testing.T) {
 	}
 
 	dialer := &mockDialer{
-		dialFn: func(_ string) (SMTPClient, error) { return client, nil },
+		dialFn: func(_ context.Context, _ string) (SMTPClient, error) { return client, nil },
 	}
 
 	sender := NewSender("mail.example.com", 25, "alerts@example.com", "", "", "none", testLogger(), WithDialer(dialer))
@@ -77,7 +77,7 @@ func TestChannel_Send_ResolvedNotification(t *testing.T) {
 	}
 
 	dialer := &mockDialer{
-		dialFn: func(_ string) (SMTPClient, error) { return client, nil },
+		dialFn: func(_ context.Context, _ string) (SMTPClient, error) { return client, nil },
 	}
 
 	sender := NewSender("mail.example.com", 25, "alerts@example.com", "", "", "none", testLogger(), WithDialer(dialer))

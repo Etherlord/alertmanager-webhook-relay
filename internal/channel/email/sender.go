@@ -2,7 +2,9 @@ package email
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,8 +30,8 @@ type SMTPClient interface {
 
 // Dialer creates SMTP connections.
 type Dialer interface {
-	Dial(addr string) (SMTPClient, error)
-	DialTLS(addr string, tlsConfig *tls.Config) (SMTPClient, error)
+	Dial(ctx context.Context, addr string) (SMTPClient, error)
+	DialTLS(ctx context.Context, addr string, tlsConfig *tls.Config) (SMTPClient, error)
 }
 
 // SenderOption configures the Sender.
@@ -79,11 +81,11 @@ func NewSender(host string, port int, from, username, password, tlsMode string, 
 }
 
 // Send sends an email with the given subject and HTML body to the specified recipients.
-func (s *Sender) Send(to []string, subject, htmlBody string) error {
+func (s *Sender) Send(ctx context.Context, to []string, subject, htmlBody string) error {
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	s.logger.Debug("email sender: dialing", "addr", addr, "tls_mode", s.tlsMode)
 
-	client, err := s.dial(addr)
+	client, err := s.dial(ctx, addr)
 	if err != nil {
 		return fmt.Errorf("email dial %s: %w", addr, err)
 	}
@@ -147,14 +149,14 @@ func (s *Sender) Send(to []string, subject, htmlBody string) error {
 }
 
 // dial creates an SMTP client using the appropriate TLS mode.
-func (s *Sender) dial(addr string) (SMTPClient, error) {
+func (s *Sender) dial(ctx context.Context, addr string) (SMTPClient, error) {
 	switch s.tlsMode {
 	case "tls":
 		//nolint:gosec // TLS config is intentionally using the SMTP host for ServerName
 		tlsConfig := &tls.Config{ServerName: s.host}
-		return s.dialer.DialTLS(addr, tlsConfig)
+		return s.dialer.DialTLS(ctx, addr, tlsConfig)
 	default: // "starttls", "none"
-		return s.dialer.Dial(addr)
+		return s.dialer.Dial(ctx, addr)
 	}
 }
 
@@ -163,7 +165,9 @@ func buildMessage(from string, to []string, subject, htmlBody string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: %s\r\n", from)
 	fmt.Fprintf(&b, "To: %s\r\n", strings.Join(to, ", "))
-	fmt.Fprintf(&b, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&b, "Date: %s\r\n", time.Now().UTC().Format(time.RFC1123Z))
+	fmt.Fprintf(&b, "Message-ID: %s\r\n", generateMessageID(from))
+	fmt.Fprintf(&b, "Subject: %s\r\n", sanitizeHeader(subject))
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
 	b.WriteString("\r\n")
@@ -171,14 +175,31 @@ func buildMessage(from string, to []string, subject, htmlBody string) string {
 	return b.String()
 }
 
+// sanitizeHeader strips CR and LF characters to prevent SMTP header injection.
+func sanitizeHeader(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+}
+
+// generateMessageID creates a unique RFC 5322 Message-ID using crypto/rand.
+func generateMessageID(from string) string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	domain := from
+	if idx := strings.LastIndex(from, "@"); idx >= 0 {
+		domain = from[idx+1:]
+	}
+	domain = strings.TrimRight(domain, ">")
+	return fmt.Sprintf("<%s@%s>", hex.EncodeToString(b), domain)
+}
+
 // netDialer is the default Dialer using net.Dialer and tls.Dialer.
 type netDialer struct {
 	timeout time.Duration
 }
 
-func (d *netDialer) Dial(addr string) (SMTPClient, error) {
+func (d *netDialer) Dial(ctx context.Context, addr string) (SMTPClient, error) {
 	dialer := &net.Dialer{Timeout: d.timeout}
-	conn, err := dialer.DialContext(context.Background(), "tcp", addr)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -186,12 +207,12 @@ func (d *netDialer) Dial(addr string) (SMTPClient, error) {
 	return smtp.NewClient(conn, host)
 }
 
-func (d *netDialer) DialTLS(addr string, tlsConfig *tls.Config) (SMTPClient, error) {
+func (d *netDialer) DialTLS(ctx context.Context, addr string, tlsConfig *tls.Config) (SMTPClient, error) {
 	dialer := &tls.Dialer{
 		NetDialer: &net.Dialer{Timeout: d.timeout},
 		Config:    tlsConfig,
 	}
-	conn, err := dialer.DialContext(context.Background(), "tcp", addr)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
