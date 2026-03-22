@@ -619,13 +619,13 @@ func TestLoad_NotifyEdgeCases(t *testing.T) {
 			t.Helper()
 			assert.Equal(t, 1, cfg.NotifyBatchSize)
 		}},
-		{"max batch size", "NOTIFY_BATCH_SIZE", "500", func(t *testing.T, cfg *Config) {
+		{"max batch size", "NOTIFY_BATCH_SIZE", "100", func(t *testing.T, cfg *Config) {
 			t.Helper()
-			assert.Equal(t, 500, cfg.NotifyBatchSize)
+			assert.Equal(t, 100, cfg.NotifyBatchSize)
 		}},
-		{"min queue size", "NOTIFY_QUEUE_SIZE", "10", func(t *testing.T, cfg *Config) {
+		{"min queue size", "NOTIFY_QUEUE_SIZE", "50", func(t *testing.T, cfg *Config) {
 			t.Helper()
-			assert.Equal(t, 10, cfg.NotifyQueueSize)
+			assert.Equal(t, 50, cfg.NotifyQueueSize)
 		}},
 		{"max queue size", "NOTIFY_QUEUE_SIZE", "10000", func(t *testing.T, cfg *Config) {
 			t.Helper()
@@ -653,6 +653,65 @@ func TestLoad_NotifyEdgeCases(t *testing.T) {
 			t.Logf("edge case %q: %s=%s", tt.name, tt.envKey, tt.envValue)
 		})
 	}
+}
+
+func TestLoad_NotifyCrossFieldEdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		batch string
+		queue string
+		check func(t *testing.T, cfg *Config)
+	}{
+		{"max batch size with matching queue", "500", "500", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 500, cfg.NotifyBatchSize)
+			assert.Equal(t, 500, cfg.NotifyQueueSize)
+		}},
+		{"min queue size with matching batch", "1", "10", func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 1, cfg.NotifyBatchSize)
+			assert.Equal(t, 10, cfg.NotifyQueueSize)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("NOTIFY_BATCH_SIZE", tt.batch)
+			t.Setenv("NOTIFY_QUEUE_SIZE", tt.queue)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.check(t, cfg)
+		})
+	}
+}
+
+func TestLoad_NotifyQueueSizeLessThanBatchSize(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("NOTIFY_BATCH_SIZE", "100")
+	t.Setenv("NOTIFY_QUEUE_SIZE", "50")
+
+	cfg, err := Load()
+	assert.Nil(t, cfg)
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "NOTIFY_QUEUE_SIZE")
+	assert.Contains(t, err.Error(), "NOTIFY_BATCH_SIZE")
+
+	t.Logf("NOTIFY_QUEUE_SIZE=50 < NOTIFY_BATCH_SIZE=100 → error: %v", err)
+}
+
+func TestLoad_NotifyQueueSizeEqualsBatchSize(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("NOTIFY_BATCH_SIZE", "100")
+	t.Setenv("NOTIFY_QUEUE_SIZE", "100")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 100, cfg.NotifyQueueSize)
+	assert.Equal(t, 100, cfg.NotifyBatchSize)
+
+	t.Logf("NOTIFY_QUEUE_SIZE == NOTIFY_BATCH_SIZE == 100 → ok")
 }
 
 func TestContainsControlChars(t *testing.T) {

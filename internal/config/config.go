@@ -272,6 +272,12 @@ func (c *Config) validate() error {
 			c.NotifySendTimeout, minNotifySendTimeout, maxNotifySendTimeout, ErrInvalidConfig)
 	}
 
+	// 12. Cross-field: QueueSize >= BatchSize
+	if c.NotifyQueueSize < c.NotifyBatchSize {
+		return fmt.Errorf("NOTIFY_QUEUE_SIZE=%d не может быть меньше NOTIFY_BATCH_SIZE=%d: %w",
+			c.NotifyQueueSize, c.NotifyBatchSize, ErrInvalidConfig)
+	}
+
 	return nil
 }
 
