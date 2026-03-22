@@ -17,6 +17,7 @@ import (
 	"alertmanager-webhook-relay/internal/notify"
 	"alertmanager-webhook-relay/internal/server"
 	"alertmanager-webhook-relay/internal/storage/sqlite"
+	"alertmanager-webhook-relay/internal/template"
 )
 
 func main() {
@@ -59,6 +60,9 @@ func run() error {
 	alertSvc := alerts.NewService(store, logger, cfg.MaxAlertsPerPayload)
 	alertHandler := alerts.HandleWebhook(logger, alertSvc, int64(cfg.MaxPayloadSize))
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop() // safe: os.Exit is called in main(), not in run()
+
 	// Build notification channels.
 	var channels []notify.Channel
 
@@ -75,7 +79,28 @@ func run() error {
 			cfg.Email.From, cfg.Email.Username, cfg.Email.Password,
 			cfg.Email.TLSMode, logger,
 		)
-		channels = append(channels, email.NewChannel(emailSender, cfg.Email.To, cfg.Email.SubjectPrefix, logger))
+
+		var formatter email.BodyFormatter
+		if cfg.Template.Dir != "" {
+			engine, err := template.NewEngine(cfg.Template.Dir, email.DefaultFuncMap(), logger)
+			if err != nil {
+				return fmt.Errorf("template engine: %w", err)
+			}
+			formatter = email.NewTemplateFormatter(engine, "default.html.tmpl", logger)
+			logger.Info("template engine initialized", "dir", cfg.Template.Dir)
+
+			if cfg.Template.ReloadEnabled {
+				watcher := template.NewWatcher(engine, logger)
+				go func() {
+					if err := watcher.Watch(ctx); err != nil {
+						logger.Error("template watcher error", "error", err)
+					}
+				}()
+				logger.Info("template watcher started", "dir", cfg.Template.Dir)
+			}
+		}
+
+		channels = append(channels, email.NewChannel(emailSender, cfg.Email.To, cfg.Email.SubjectPrefix, logger, formatter))
 		logger.Info("email channel enabled", "smtp_host", cfg.Email.SMTPHost, "to", cfg.Email.To)
 	} else {
 		logger.Info("email channel disabled")
@@ -86,9 +111,6 @@ func run() error {
 		QueueSize:    cfg.NotifyQueueSize,
 		SendTimeout:  cfg.NotifySendTimeout,
 	}, logger)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop() // safe: os.Exit is called in main(), not in run()
 
 	srv := server.New(
 		server.Config{

@@ -36,6 +36,8 @@ func setDefaults(t *testing.T) {
 	t.Setenv("EMAIL_PASSWORD", "")
 	t.Setenv("EMAIL_TLS_MODE", "")
 	t.Setenv("EMAIL_SUBJECT_PREFIX", "")
+	t.Setenv("TEMPLATE_DIR", "")
+	t.Setenv("TEMPLATE_RELOAD", "")
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -55,6 +57,10 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, 50, cfg.NotifyBatchSize)
 	assert.Equal(t, 100, cfg.NotifyQueueSize)
 	assert.Equal(t, 30*time.Second, cfg.NotifySendTimeout)
+
+	// Template defaults
+	assert.Empty(t, cfg.Template.Dir)
+	assert.False(t, cfg.Template.ReloadEnabled)
 
 	// Email defaults
 	assert.False(t, cfg.Email.Enabled)
@@ -1747,4 +1753,124 @@ func TestConfig_LogValue_Email(t *testing.T) {
 	assert.NotContains(t, output, "super-secret-password")
 	assert.Contains(t, output, "mail.example.com")
 	assert.Contains(t, output, "alerts@example.com")
+}
+
+// --- Template configuration tests ---
+
+func TestLoad_TemplateDefaults(t *testing.T) {
+	setDefaults(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Empty(t, cfg.Template.Dir)
+	assert.False(t, cfg.Template.ReloadEnabled)
+}
+
+func TestLoad_TemplateCustomValues(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("TEMPLATE_DIR", "/app/templates")
+	t.Setenv("TEMPLATE_RELOAD", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "/app/templates", cfg.Template.Dir)
+	assert.True(t, cfg.Template.ReloadEnabled)
+}
+
+func TestLoad_TemplateReloadFalse(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("TEMPLATE_DIR", "/app/templates")
+	t.Setenv("TEMPLATE_RELOAD", "false")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.False(t, cfg.Template.ReloadEnabled)
+}
+
+func TestLoad_InvalidTemplateReload(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"yes", "yes"},
+		{"1", "1"},
+		{"on", "on"},
+		{"TRUE uppercase", "TRUE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("TEMPLATE_RELOAD", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("TEMPLATE_RELOAD=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidTemplateDir(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		errContains string
+	}{
+		{"too long", strings.Repeat("a", 513), "превышает максимум"},
+		{"control chars", "/app/templates\x01", "управляющие символы"},
+		{"shell expansion", "/app/$(whoami)/templates", "опасную последовательность"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("TEMPLATE_DIR", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+
+			t.Logf("TEMPLATE_DIR=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_TemplateNormalization(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("TEMPLATE_DIR", " /app/templates ")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "/app/templates", cfg.Template.Dir)
+}
+
+func TestLoad_TemplateValidEdgeCases(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+	}{
+		{"max dir length", map[string]string{"TEMPLATE_DIR": strings.Repeat("a", 512)}},
+		{"dir with special chars", map[string]string{"TEMPLATE_DIR": "/app/templates-v2/email"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			assert.NotEmpty(t, cfg.Template.Dir)
+		})
+	}
 }

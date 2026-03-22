@@ -30,6 +30,8 @@ services:
       - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
       - EMAIL_TLS_MODE=${EMAIL_TLS_MODE:-starttls}
       - EMAIL_SUBJECT_PREFIX=${EMAIL_SUBJECT_PREFIX:-[Alert]}
+      - TEMPLATE_DIR=${TEMPLATE_DIR:-}
+      - TEMPLATE_RELOAD=${TEMPLATE_RELOAD:-}
     profiles:
       - tools
 

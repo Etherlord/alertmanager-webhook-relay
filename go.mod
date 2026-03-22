@@ -3,6 +3,7 @@ module alertmanager-webhook-relay
 go 1.26.1
 
 require (
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.47.0

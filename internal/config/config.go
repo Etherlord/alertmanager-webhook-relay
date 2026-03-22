@@ -51,6 +51,8 @@ const (
 	maxEmailPasswordLen      = 512
 	maxEmailSubjectPrefixLen = 128
 	maxEmailSMTPHostLen      = 253 // RFC 1035
+
+	maxTemplateDirLen = 512
 )
 
 var validTLSModes = map[string]struct{}{
@@ -94,6 +96,12 @@ type EmailConfig struct {
 	SubjectPrefix string
 }
 
+// TemplateConfig holds configuration for the template system.
+type TemplateConfig struct {
+	Dir           string
+	ReloadEnabled bool
+}
+
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
 	Port            int
@@ -110,8 +118,9 @@ type Config struct {
 	NotifyQueueSize    int
 	NotifySendTimeout  time.Duration
 
-	Pachca PachcaConfig
-	Email  EmailConfig
+	Pachca   PachcaConfig
+	Email    EmailConfig
+	Template TemplateConfig
 }
 
 // Load reads configuration from environment variables, applies defaults,
@@ -289,6 +298,22 @@ func Load() (*Config, error) {
 		cfg.Email.SubjectPrefix = v
 	}
 
+	// Template configuration.
+	if v := os.Getenv("TEMPLATE_DIR"); v != "" {
+		cfg.Template.Dir = v
+	}
+
+	if v := os.Getenv("TEMPLATE_RELOAD"); v != "" {
+		switch v {
+		case "true":
+			cfg.Template.ReloadEnabled = true
+		case "false":
+			cfg.Template.ReloadEnabled = false
+		default:
+			return nil, fmt.Errorf("невалидное значение TEMPLATE_RELOAD=%q (допустимо true/false): %w", v, ErrInvalidConfig)
+		}
+	}
+
 	cfg.normalize()
 
 	if err := cfg.validate(); err != nil {
@@ -357,6 +382,12 @@ func (c *Config) normalize() {
 	if trimmed := strings.TrimSpace(c.Email.SubjectPrefix); trimmed != c.Email.SubjectPrefix {
 		slog.Debug("нормализация: EMAIL_SUBJECT_PREFIX", "до", c.Email.SubjectPrefix, "после", trimmed)
 		c.Email.SubjectPrefix = trimmed
+	}
+
+	// Template normalization.
+	if trimmed := strings.TrimSpace(c.Template.Dir); trimmed != c.Template.Dir {
+		slog.Debug("нормализация: TEMPLATE_DIR", "до", c.Template.Dir, "после", trimmed)
+		c.Template.Dir = trimmed
 	}
 }
 
@@ -454,6 +485,20 @@ func (c *Config) validate() error {
 	if c.Email.Enabled {
 		if err := c.validateEmail(); err != nil {
 			return err
+		}
+	}
+
+	// 15. Template (only if Dir is set)
+	if c.Template.Dir != "" {
+		if len(c.Template.Dir) > maxTemplateDirLen {
+			return fmt.Errorf("TEMPLATE_DIR длиной %d превышает максимум %d: %w",
+				len(c.Template.Dir), maxTemplateDirLen, ErrInvalidConfig)
+		}
+		if containsControlChars(c.Template.Dir) {
+			return fmt.Errorf("TEMPLATE_DIR содержит управляющие символы: %w", ErrInvalidConfig)
+		}
+		if found, desc := containsDangerousSequence(c.Template.Dir); found {
+			return fmt.Errorf("TEMPLATE_DIR содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
 		}
 	}
 
@@ -708,6 +753,10 @@ func (c Config) LogValue() slog.Value {
 			slog.String("password", "[REDACTED]"),
 			slog.String("tls_mode", c.Email.TLSMode),
 			slog.String("subject_prefix", c.Email.SubjectPrefix),
+		),
+		slog.Group("template",
+			slog.String("dir", c.Template.Dir),
+			slog.Bool("reload_enabled", c.Template.ReloadEnabled),
 		),
 	)
 }
