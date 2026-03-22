@@ -28,6 +28,14 @@ func setDefaults(t *testing.T) {
 	t.Setenv("PACHCA_TOKEN", "")
 	t.Setenv("PACHCA_BASE_URL", "")
 	t.Setenv("PACHCA_CHAT_ID", "")
+	t.Setenv("EMAIL_SMTP_HOST", "")
+	t.Setenv("EMAIL_SMTP_PORT", "")
+	t.Setenv("EMAIL_FROM", "")
+	t.Setenv("EMAIL_TO", "")
+	t.Setenv("EMAIL_USERNAME", "")
+	t.Setenv("EMAIL_PASSWORD", "")
+	t.Setenv("EMAIL_TLS_MODE", "")
+	t.Setenv("EMAIL_SUBJECT_PREFIX", "")
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -47,6 +55,17 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, 50, cfg.NotifyBatchSize)
 	assert.Equal(t, 100, cfg.NotifyQueueSize)
 	assert.Equal(t, 30*time.Second, cfg.NotifySendTimeout)
+
+	// Email defaults
+	assert.False(t, cfg.Email.Enabled)
+	assert.Empty(t, cfg.Email.SMTPHost)
+	assert.Equal(t, 587, cfg.Email.SMTPPort)
+	assert.Empty(t, cfg.Email.From)
+	assert.Nil(t, cfg.Email.To)
+	assert.Empty(t, cfg.Email.Username)
+	assert.Empty(t, cfg.Email.Password)
+	assert.Equal(t, "starttls", cfg.Email.TLSMode)
+	assert.Equal(t, "[Alert]", cfg.Email.SubjectPrefix)
 
 	t.Logf("defaults: port=%d, log_level=%s, shutdown_timeout=%s, db_driver=%s, db_dsn=%s, max_payload=%d, max_alerts=%d",
 		cfg.Port, cfg.LogLevel, cfg.ShutdownTimeout,
@@ -1138,4 +1157,594 @@ func TestLoad_PachcaBaseURLSchemes(t *testing.T) {
 			t.Logf("PACHCA_BASE_URL=%q → wantErr=%v, err=%v", tt.baseURL, tt.wantErr, err)
 		})
 	}
+}
+
+// --- Email configuration tests ---
+
+// setEmailDefaults sets valid Email ENV variables for tests that need Email enabled.
+func setEmailDefaults(t *testing.T) {
+	t.Helper()
+	t.Setenv("EMAIL_SMTP_HOST", "mail.example.com")
+	t.Setenv("EMAIL_FROM", "alerts@example.com")
+	t.Setenv("EMAIL_TO", "oncall@example.com")
+}
+
+func TestLoad_EmailDefaults(t *testing.T) {
+	setDefaults(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.False(t, cfg.Email.Enabled)
+	assert.Equal(t, 587, cfg.Email.SMTPPort)
+	assert.Equal(t, "starttls", cfg.Email.TLSMode)
+	assert.Equal(t, "[Alert]", cfg.Email.SubjectPrefix)
+
+	t.Logf("email defaults: enabled=%v, port=%d, tls=%s, prefix=%s",
+		cfg.Email.Enabled, cfg.Email.SMTPPort, cfg.Email.TLSMode, cfg.Email.SubjectPrefix)
+}
+
+func TestLoad_EmailImplicitEnable(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Email.Enabled)
+	assert.Equal(t, "mail.example.com", cfg.Email.SMTPHost)
+	assert.Equal(t, 587, cfg.Email.SMTPPort)
+	assert.Equal(t, "alerts@example.com", cfg.Email.From)
+	assert.Equal(t, []string{"oncall@example.com"}, cfg.Email.To)
+	assert.Equal(t, "starttls", cfg.Email.TLSMode)
+	assert.Equal(t, "[Alert]", cfg.Email.SubjectPrefix)
+
+	t.Logf("email enabled: host=%s, port=%d, from=%s, to=%v",
+		cfg.Email.SMTPHost, cfg.Email.SMTPPort, cfg.Email.From, cfg.Email.To)
+}
+
+func TestLoad_EmailCustomValues(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	t.Setenv("EMAIL_SMTP_PORT", "465")
+	t.Setenv("EMAIL_TO", "admin@example.com, devops@example.com")
+	t.Setenv("EMAIL_USERNAME", "smtp-user")
+	t.Setenv("EMAIL_PASSWORD", "smtp-pass")
+	t.Setenv("EMAIL_TLS_MODE", "tls")
+	t.Setenv("EMAIL_SUBJECT_PREFIX", "[PROD]")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Email.Enabled)
+	assert.Equal(t, 465, cfg.Email.SMTPPort)
+	assert.Equal(t, []string{"admin@example.com", "devops@example.com"}, cfg.Email.To)
+	assert.Equal(t, "smtp-user", cfg.Email.Username)
+	assert.Equal(t, "smtp-pass", cfg.Email.Password)
+	assert.Equal(t, "tls", cfg.Email.TLSMode)
+	assert.Equal(t, "[PROD]", cfg.Email.SubjectPrefix)
+}
+
+func TestLoad_EmailDisabledNoValidation(t *testing.T) {
+	setDefaults(t)
+	// SMTPHost пустой → Enabled=false → невалидные FROM/TO не вызывают ошибку
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.Email.Enabled)
+}
+
+func TestLoad_EmailToMultipleRecipients(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	t.Setenv("EMAIL_TO", "a@example.com, b@example.com, c@example.com")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a@example.com", "b@example.com", "c@example.com"}, cfg.Email.To)
+}
+
+func TestLoad_EmailToSkipsEmpty(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	t.Setenv("EMAIL_TO", "a@example.com,,  , b@example.com,")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a@example.com", "b@example.com"}, cfg.Email.To)
+}
+
+func TestLoad_InvalidEmailSMTPPort(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"not a number", "abc"},
+		{"zero", "0"},
+		{"negative", "-1"},
+		{"too large", "65536"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_SMTP_PORT", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("EMAIL_SMTP_PORT=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidEmailFrom(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"empty", ""},
+		{"no at sign", "not-an-email"},
+		{"missing domain", "user@"},
+		{"missing local", "@example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_FROM", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("EMAIL_FROM=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidEmailTo(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"empty string", ""},
+		{"only commas", ",,"},
+		{"only spaces", "   "},
+		{"invalid email", "not-an-email"},
+		{"one valid one invalid", "a@example.com, invalid"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_TO", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("EMAIL_TO=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidEmailTLSMode(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"ssl", "ssl"},
+		{"auto", "auto"},
+		{"unknown", "foo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_TLS_MODE", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("EMAIL_TLS_MODE=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidEmailPassword(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		errContains string
+	}{
+		{"space inside", "pass word", "printable ASCII"},
+		{"control chars", "pass\x01word", "printable ASCII"},
+		{"unicode cyrillic", "пароль-длинный-пароль", "printable ASCII"},
+		{"too long", strings.Repeat("a", 513), "превышает максимум"},
+		{"shell expansion", "$(whoami)", "опасную последовательность"},
+		{"template injection", "{{.Pass}}", "опасную последовательность"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_USERNAME", "user")
+			t.Setenv("EMAIL_PASSWORD", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+
+			t.Logf("EMAIL_PASSWORD=%q → error: %v", "[REDACTED]", err)
+		})
+	}
+}
+
+func TestLoad_InvalidEmailSMTPHost(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		errContains string
+	}{
+		{"too long", strings.Repeat("a", 254), "превышает максимум"},
+		{"control chars", "mail\x01.example.com", "управляющие символы"},
+		{"shell expansion", "mail$(whoami).example.com", "опасную последовательность"},
+		{"template injection", "mail{{.Host}}.com", "опасную последовательность"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_SMTP_HOST", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+
+			t.Logf("EMAIL_SMTP_HOST=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_InvalidEmailSubjectPrefix(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		errContains string
+	}{
+		{"too long", strings.Repeat("A", 129), "превышает максимум"},
+		{"control chars", "[Alert\x01]", "управляющие символы"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			t.Setenv("EMAIL_SUBJECT_PREFIX", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+
+			t.Logf("EMAIL_SUBJECT_PREFIX=%q → error: %v", tt.value, err)
+		})
+	}
+}
+
+func TestLoad_EmailCrossField_UsernameWithoutPassword(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	t.Setenv("EMAIL_USERNAME", "smtp-user")
+	// EMAIL_PASSWORD пустой
+
+	cfg, err := Load()
+	assert.Nil(t, cfg)
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "EMAIL_USERNAME")
+	assert.Contains(t, err.Error(), "EMAIL_PASSWORD")
+
+	t.Logf("cross-field: username set, password missing → error: %v", err)
+}
+
+func TestLoad_EmailCrossField_PasswordWithoutUsername(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	t.Setenv("EMAIL_PASSWORD", "smtp-pass")
+	// EMAIL_USERNAME пустой
+
+	cfg, err := Load()
+	assert.Nil(t, cfg)
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "EMAIL_USERNAME")
+	assert.Contains(t, err.Error(), "EMAIL_PASSWORD")
+
+	t.Logf("cross-field: password set, username missing → error: %v", err)
+}
+
+func TestLoad_EmailCrossField_BothAuthFieldsSet(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	t.Setenv("EMAIL_USERNAME", "smtp-user")
+	t.Setenv("EMAIL_PASSWORD", "smtp-pass")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "smtp-user", cfg.Email.Username)
+	assert.Equal(t, "smtp-pass", cfg.Email.Password)
+}
+
+func TestLoad_EmailCrossField_BothAuthFieldsEmpty(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	// Оба пусты — ok
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Email.Username)
+	assert.Empty(t, cfg.Email.Password)
+}
+
+func TestLoad_EmailNormalization(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   map[string]string
+		check func(t *testing.T, cfg *Config)
+	}{
+		{
+			name: "SMTPHost whitespace trimmed",
+			env:  map[string]string{"EMAIL_SMTP_HOST": " mail.example.com "},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "mail.example.com", cfg.Email.SMTPHost)
+			},
+		},
+		{
+			name: "From whitespace trimmed",
+			env:  map[string]string{"EMAIL_FROM": " alerts@example.com "},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "alerts@example.com", cfg.Email.From)
+			},
+		},
+		{
+			name: "TLSMode uppercase normalized to lowercase",
+			env:  map[string]string{"EMAIL_TLS_MODE": "STARTTLS"},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "starttls", cfg.Email.TLSMode)
+			},
+		},
+		{
+			name: "TLSMode mixed case normalized",
+			env:  map[string]string{"EMAIL_TLS_MODE": " TLS "},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "tls", cfg.Email.TLSMode)
+			},
+		},
+		{
+			name: "SubjectPrefix whitespace trimmed",
+			env:  map[string]string{"EMAIL_SUBJECT_PREFIX": " [PROD] "},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "[PROD]", cfg.Email.SubjectPrefix)
+			},
+		},
+		{
+			name: "To addresses whitespace trimmed",
+			env:  map[string]string{"EMAIL_TO": " a@example.com , b@example.com "},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, []string{"a@example.com", "b@example.com"}, cfg.Email.To)
+			},
+		},
+		{
+			name: "Username whitespace trimmed",
+			env:  map[string]string{"EMAIL_USERNAME": " smtp-user ", "EMAIL_PASSWORD": "smtp-pass"},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "smtp-user", cfg.Email.Username)
+			},
+		},
+		{
+			name: "Password whitespace trimmed",
+			env:  map[string]string{"EMAIL_USERNAME": "smtp-user", "EMAIL_PASSWORD": " smtp-pass "},
+			check: func(t *testing.T, cfg *Config) {
+				t.Helper()
+				assert.Equal(t, "smtp-pass", cfg.Email.Password)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.check(t, cfg)
+
+			t.Logf("email normalization: %s", tt.name)
+		})
+	}
+}
+
+func TestLoad_EmailValidEdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   map[string]string
+		check func(t *testing.T, cfg *Config)
+	}{
+		{"min port", map[string]string{"EMAIL_SMTP_PORT": "1"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 1, cfg.Email.SMTPPort)
+		}},
+		{"max port", map[string]string{"EMAIL_SMTP_PORT": "65535"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, 65535, cfg.Email.SMTPPort)
+		}},
+		{"tls mode starttls", map[string]string{"EMAIL_TLS_MODE": "starttls"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, "starttls", cfg.Email.TLSMode)
+		}},
+		{"tls mode tls", map[string]string{"EMAIL_TLS_MODE": "tls"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, "tls", cfg.Email.TLSMode)
+		}},
+		{"tls mode none", map[string]string{"EMAIL_TLS_MODE": "none"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, "none", cfg.Email.TLSMode)
+		}},
+		{"max smtp host length", map[string]string{"EMAIL_SMTP_HOST": strings.Repeat("a", 253)}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Len(t, cfg.Email.SMTPHost, 253)
+		}},
+		{"max password length", map[string]string{"EMAIL_USERNAME": "user", "EMAIL_PASSWORD": strings.Repeat("a", 512)}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Len(t, cfg.Email.Password, 512)
+		}},
+		{"max subject prefix length", map[string]string{"EMAIL_SUBJECT_PREFIX": strings.Repeat("A", 128)}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Len(t, cfg.Email.SubjectPrefix, 128)
+		}},
+		{"password with printable ASCII specials", map[string]string{"EMAIL_USERNAME": "user", "EMAIL_PASSWORD": "!@#$%^&*()-_=+[]|;:',.<>?/~"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.True(t, cfg.Email.Enabled)
+		}},
+		{"email with display name in From", map[string]string{"EMAIL_FROM": "Alert System <alerts@example.com>"}, func(t *testing.T, cfg *Config) {
+			t.Helper()
+			assert.Equal(t, "Alert System <alerts@example.com>", cfg.Email.From)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.check(t, cfg)
+
+			t.Logf("email edge case: %s", tt.name)
+		})
+	}
+}
+
+func TestLoad_EmailTLSModes(t *testing.T) {
+	tests := []struct {
+		name    string
+		tlsMode string
+		wantErr bool
+	}{
+		{"starttls valid", "starttls", false},
+		{"tls valid", "tls", false},
+		{"none valid", "none", false},
+		{"ssl invalid", "ssl", true},
+		{"auto invalid", "auto", true},
+		{"empty uses default", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			setEmailDefaults(t)
+			if tt.tlsMode != "" {
+				t.Setenv("EMAIL_TLS_MODE", tt.tlsMode)
+			}
+
+			cfg, err := Load()
+			if tt.wantErr {
+				assert.Nil(t, cfg)
+				assert.ErrorIs(t, err, ErrInvalidConfig)
+			} else {
+				require.NoError(t, err)
+				if tt.tlsMode != "" {
+					assert.Equal(t, tt.tlsMode, cfg.Email.TLSMode)
+				} else {
+					assert.Equal(t, "starttls", cfg.Email.TLSMode)
+				}
+			}
+
+			t.Logf("EMAIL_TLS_MODE=%q → wantErr=%v, err=%v", tt.tlsMode, tt.wantErr, err)
+		})
+	}
+}
+
+func TestLoad_EmailMissingFrom(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("EMAIL_SMTP_HOST", "mail.example.com")
+	t.Setenv("EMAIL_TO", "oncall@example.com")
+	// EMAIL_FROM не задан → ошибка
+
+	cfg, err := Load()
+	assert.Nil(t, cfg)
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "EMAIL_FROM")
+}
+
+func TestLoad_EmailMissingTo(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("EMAIL_SMTP_HOST", "mail.example.com")
+	t.Setenv("EMAIL_FROM", "alerts@example.com")
+	// EMAIL_TO не задан → ошибка
+
+	cfg, err := Load()
+	assert.Nil(t, cfg)
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "EMAIL_TO")
+}
+
+func TestConfig_LogValue_Email(t *testing.T) {
+	setDefaults(t)
+	setEmailDefaults(t)
+	t.Setenv("EMAIL_USERNAME", "smtp-user")
+	t.Setenv("EMAIL_PASSWORD", "super-secret-password")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	// Direct LogValue check
+	val := cfg.LogValue()
+	got := val.String()
+	assert.Contains(t, got, "[REDACTED]")
+	assert.NotContains(t, got, "super-secret-password")
+	assert.Contains(t, got, "mail.example.com")
+
+	// Through real slog
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger.Info("test", "config", cfg)
+
+	output := buf.String()
+	t.Logf("slog output: %s", output)
+
+	assert.Contains(t, output, "[REDACTED]")
+	assert.NotContains(t, output, "super-secret-password")
+	assert.Contains(t, output, "mail.example.com")
+	assert.Contains(t, output, "alerts@example.com")
 }

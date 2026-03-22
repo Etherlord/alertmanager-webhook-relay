@@ -22,6 +22,14 @@ services:
       - PACHCA_TOKEN=${PACHCA_TOKEN:-}
       - PACHCA_BASE_URL=${PACHCA_BASE_URL:-https://api.pachca.com}
       - PACHCA_CHAT_ID=${PACHCA_CHAT_ID:-}
+      - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_TO=${EMAIL_TO:-}
+      - EMAIL_USERNAME=${EMAIL_USERNAME:-}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
+      - EMAIL_TLS_MODE=${EMAIL_TLS_MODE:-starttls}
+      - EMAIL_SUBJECT_PREFIX=${EMAIL_SUBJECT_PREFIX:-[Alert]}
     profiles:
       - tools
 

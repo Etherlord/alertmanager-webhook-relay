@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -42,7 +43,21 @@ const (
 
 	minPachcaChatID = 1
 	maxPachcaChatID = 999999999
+
+	defaultEmailSMTPPort      = 587
+	defaultEmailTLSMode       = "starttls"
+	defaultEmailSubjectPrefix = "[Alert]"
+
+	maxEmailPasswordLen      = 512
+	maxEmailSubjectPrefixLen = 128
+	maxEmailSMTPHostLen      = 253 // RFC 1035
 )
+
+var validTLSModes = map[string]struct{}{
+	"starttls": {},
+	"tls":      {},
+	"none":     {},
+}
 
 var validLogLevels = map[string]struct{}{
 	"debug": {},
@@ -66,6 +81,19 @@ type PachcaConfig struct {
 	ChatID  int
 }
 
+// EmailConfig holds configuration for the Email notification channel.
+type EmailConfig struct {
+	Enabled       bool
+	SMTPHost      string
+	SMTPPort      int
+	From          string
+	To            []string
+	Username      string
+	Password      string // #nosec G117 — митигация через LogValue()
+	TLSMode       string
+	SubjectPrefix string
+}
+
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
 	Port            int
@@ -83,6 +111,7 @@ type Config struct {
 	NotifySendTimeout  time.Duration
 
 	Pachca PachcaConfig
+	Email  EmailConfig
 }
 
 // Load reads configuration from environment variables, applies defaults,
@@ -111,6 +140,12 @@ func Load() (*Config, error) {
 
 		Pachca: PachcaConfig{
 			BaseURL: "https://api.pachca.com",
+		},
+
+		Email: EmailConfig{
+			SMTPPort:      defaultEmailSMTPPort,
+			TLSMode:       defaultEmailTLSMode,
+			SubjectPrefix: defaultEmailSubjectPrefix,
 		},
 	}
 
@@ -208,6 +243,52 @@ func Load() (*Config, error) {
 		cfg.Pachca.ChatID = n
 	}
 
+	// Email channel configuration.
+	if v := os.Getenv("EMAIL_SMTP_HOST"); v != "" {
+		cfg.Email.SMTPHost = v
+		cfg.Email.Enabled = true
+	}
+
+	if v := os.Getenv("EMAIL_SMTP_PORT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("невалидное значение EMAIL_SMTP_PORT=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
+		}
+		cfg.Email.SMTPPort = n
+	}
+
+	if v := os.Getenv("EMAIL_FROM"); v != "" {
+		cfg.Email.From = v
+	}
+
+	if v := os.Getenv("EMAIL_TO"); v != "" {
+		parts := strings.Split(v, ",")
+		var recipients []string
+		for _, p := range parts {
+			trimmed := strings.TrimSpace(p)
+			if trimmed != "" {
+				recipients = append(recipients, trimmed)
+			}
+		}
+		cfg.Email.To = recipients
+	}
+
+	if v := os.Getenv("EMAIL_USERNAME"); v != "" {
+		cfg.Email.Username = v
+	}
+
+	if v := os.Getenv("EMAIL_PASSWORD"); v != "" {
+		cfg.Email.Password = v
+	}
+
+	if v := os.Getenv("EMAIL_TLS_MODE"); v != "" {
+		cfg.Email.TLSMode = v
+	}
+
+	if v := os.Getenv("EMAIL_SUBJECT_PREFIX"); v != "" {
+		cfg.Email.SubjectPrefix = v
+	}
+
 	cfg.normalize()
 
 	if err := cfg.validate(); err != nil {
@@ -244,6 +325,38 @@ func (c *Config) normalize() {
 	if trimmed := strings.TrimSpace(c.Pachca.Token); trimmed != c.Pachca.Token {
 		slog.Debug("нормализация: PACHCA_TOKEN", "действие", "TrimSpace")
 		c.Pachca.Token = trimmed
+	}
+
+	// Email normalization.
+	if trimmed := strings.TrimSpace(c.Email.SMTPHost); trimmed != c.Email.SMTPHost {
+		slog.Debug("нормализация: EMAIL_SMTP_HOST", "до", c.Email.SMTPHost, "после", trimmed)
+		c.Email.SMTPHost = trimmed
+	}
+	if trimmed := strings.TrimSpace(c.Email.From); trimmed != c.Email.From {
+		slog.Debug("нормализация: EMAIL_FROM", "до", c.Email.From, "после", trimmed)
+		c.Email.From = trimmed
+	}
+	for i, addr := range c.Email.To {
+		if trimmed := strings.TrimSpace(addr); trimmed != addr {
+			slog.Debug("нормализация: EMAIL_TO", "до", addr, "после", trimmed)
+			c.Email.To[i] = trimmed
+		}
+	}
+	if trimmed := strings.TrimSpace(c.Email.Username); trimmed != c.Email.Username {
+		slog.Debug("нормализация: EMAIL_USERNAME", "действие", "TrimSpace")
+		c.Email.Username = trimmed
+	}
+	if trimmed := strings.TrimSpace(c.Email.Password); trimmed != c.Email.Password {
+		slog.Debug("нормализация: EMAIL_PASSWORD", "действие", "TrimSpace")
+		c.Email.Password = trimmed
+	}
+	if lower := strings.ToLower(strings.TrimSpace(c.Email.TLSMode)); lower != c.Email.TLSMode {
+		slog.Debug("нормализация: EMAIL_TLS_MODE", "до", c.Email.TLSMode, "после", lower)
+		c.Email.TLSMode = lower
+	}
+	if trimmed := strings.TrimSpace(c.Email.SubjectPrefix); trimmed != c.Email.SubjectPrefix {
+		slog.Debug("нормализация: EMAIL_SUBJECT_PREFIX", "до", c.Email.SubjectPrefix, "после", trimmed)
+		c.Email.SubjectPrefix = trimmed
 	}
 }
 
@@ -337,6 +450,13 @@ func (c *Config) validate() error {
 		}
 	}
 
+	// 14. Email channel (skip if disabled)
+	if c.Email.Enabled {
+		if err := c.validateEmail(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -397,6 +517,81 @@ func (c *Config) validatePachca() error {
 	}
 	if u.Host == "" {
 		return fmt.Errorf("PACHCA_BASE_URL=%q должен содержать хост: %w", c.Pachca.BaseURL, ErrInvalidConfig)
+	}
+
+	return nil
+}
+
+// validateEmail checks all Email channel configuration constraints.
+func (c *Config) validateEmail() error {
+	// SMTPHost: not empty (guaranteed by Enabled trigger), length, control chars, dangerous
+	if len(c.Email.SMTPHost) > maxEmailSMTPHostLen {
+		return fmt.Errorf("EMAIL_SMTP_HOST длиной %d превышает максимум %d: %w",
+			len(c.Email.SMTPHost), maxEmailSMTPHostLen, ErrInvalidConfig)
+	}
+	if containsControlChars(c.Email.SMTPHost) {
+		return fmt.Errorf("EMAIL_SMTP_HOST содержит управляющие символы: %w", ErrInvalidConfig)
+	}
+	if found, desc := containsDangerousSequence(c.Email.SMTPHost); found {
+		return fmt.Errorf("EMAIL_SMTP_HOST содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
+	}
+
+	// SMTPPort: range
+	if c.Email.SMTPPort < minPort || c.Email.SMTPPort > maxPort {
+		return fmt.Errorf("EMAIL_SMTP_PORT=%d вне диапазона [%d, %d]: %w",
+			c.Email.SMTPPort, minPort, maxPort, ErrInvalidConfig)
+	}
+
+	// From: required, parse as email address
+	if c.Email.From == "" {
+		return fmt.Errorf("EMAIL_FROM обязателен когда Email канал включён: %w", ErrInvalidConfig)
+	}
+	if _, err := mail.ParseAddress(c.Email.From); err != nil {
+		return fmt.Errorf("EMAIL_FROM=%q невалидный email адрес (%s): %w", c.Email.From, err.Error(), ErrInvalidConfig)
+	}
+
+	// To: required, non-empty list, parse each
+	if len(c.Email.To) == 0 {
+		return fmt.Errorf("EMAIL_TO обязателен когда Email канал включён: %w", ErrInvalidConfig)
+	}
+	for _, addr := range c.Email.To {
+		if _, err := mail.ParseAddress(addr); err != nil {
+			return fmt.Errorf("EMAIL_TO=%q невалидный email адрес (%s): %w", addr, err.Error(), ErrInvalidConfig)
+		}
+	}
+
+	// TLSMode: allowlist
+	if _, ok := validTLSModes[c.Email.TLSMode]; !ok {
+		return fmt.Errorf("EMAIL_TLS_MODE=%q должен быть starttls/tls/none: %w", c.Email.TLSMode, ErrInvalidConfig)
+	}
+
+	// Password: printable ASCII, max length (only if set)
+	if c.Email.Password != "" {
+		if len(c.Email.Password) > maxEmailPasswordLen {
+			return fmt.Errorf("EMAIL_PASSWORD длиной %d превышает максимум %d: %w",
+				len(c.Email.Password), maxEmailPasswordLen, ErrInvalidConfig)
+		}
+		if !isPrintableASCII(c.Email.Password) {
+			return fmt.Errorf("EMAIL_PASSWORD содержит недопустимые символы (допустимы только printable ASCII): %w",
+				ErrInvalidConfig)
+		}
+		if found, desc := containsDangerousSequence(c.Email.Password); found {
+			return fmt.Errorf("EMAIL_PASSWORD содержит опасную последовательность (%s): %w", desc, ErrInvalidConfig)
+		}
+	}
+
+	// SubjectPrefix: length, control chars
+	if len(c.Email.SubjectPrefix) > maxEmailSubjectPrefixLen {
+		return fmt.Errorf("EMAIL_SUBJECT_PREFIX длиной %d превышает максимум %d: %w",
+			len(c.Email.SubjectPrefix), maxEmailSubjectPrefixLen, ErrInvalidConfig)
+	}
+	if containsControlChars(c.Email.SubjectPrefix) {
+		return fmt.Errorf("EMAIL_SUBJECT_PREFIX содержит управляющие символы: %w", ErrInvalidConfig)
+	}
+
+	// Cross-field: Username ↔ Password (both or neither)
+	if (c.Email.Username != "") != (c.Email.Password != "") {
+		return fmt.Errorf("EMAIL_USERNAME и EMAIL_PASSWORD должны быть оба заданы или оба пусты: %w", ErrInvalidConfig)
 	}
 
 	return nil
@@ -502,6 +697,17 @@ func (c Config) LogValue() slog.Value {
 			slog.String("base_url", c.Pachca.BaseURL),
 			slog.String("token", "[REDACTED]"),
 			slog.Int("chat_id", c.Pachca.ChatID),
+		),
+		slog.Group("email",
+			slog.Bool("enabled", c.Email.Enabled),
+			slog.String("smtp_host", c.Email.SMTPHost),
+			slog.Int("smtp_port", c.Email.SMTPPort),
+			slog.String("from", c.Email.From),
+			slog.Any("to", c.Email.To),
+			slog.String("username", c.Email.Username),
+			slog.String("password", "[REDACTED]"),
+			slog.String("tls_mode", c.Email.TLSMode),
+			slog.String("subject_prefix", c.Email.SubjectPrefix),
 		),
 	)
 }
