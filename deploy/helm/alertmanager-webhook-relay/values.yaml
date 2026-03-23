@@ -1,0 +1,82 @@
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: alertmanager-webhook-relay
+  tag: ""  # defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+service:
+  type: ClusterIP
+  port: 8080
+
+strategy:
+  type: Recreate  # SQLite single-writer; switch to RollingUpdate for PostgreSQL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+persistence:
+  enabled: true
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  storageClass: ""
+
+networkPolicy:
+  enabled: true
+  alertmanager:
+    namespaceSelector: {}
+    podSelector: {}
+
+# Non-sensitive config -> ConfigMap
+config:
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  SHUTDOWN_TIMEOUT: "15s"
+  DATABASE_DRIVER: "sqlite"
+  MAX_PAYLOAD_SIZE: "1048576"
+  MAX_ALERTS_PER_PAYLOAD: "100"
+  NOTIFY_POLL_INTERVAL: "5s"
+  NOTIFY_BATCH_SIZE: "50"
+  NOTIFY_QUEUE_SIZE: "100"
+  NOTIFY_SEND_TIMEOUT: "30s"
+  PACHCA_BASE_URL: "https://api.pachca.com"
+  PACHCA_CHAT_ID: ""
+  EMAIL_SMTP_HOST: ""
+  EMAIL_SMTP_PORT: "587"
+  EMAIL_FROM: ""
+  EMAIL_TO: ""
+  EMAIL_TLS_MODE: "starttls"
+  EMAIL_SUBJECT_PREFIX: "[Alert]"
+  TEMPLATE_DIR: "/templates/email"  # baked into Docker image via COPY
+  TEMPLATE_RELOAD: ""
+
+# Sensitive config -> Secret (stringData, placeholders)
+secret:
+  create: true
+  DATABASE_DSN: "CHANGE_ME"
+  PACHCA_TOKEN: ""
+  EMAIL_USERNAME: ""
+  EMAIL_PASSWORD: ""

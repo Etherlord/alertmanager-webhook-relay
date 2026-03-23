@@ -1,0 +1,6 @@
+apiVersion: v2
+name: alertmanager-webhook-relay
+description: Alertmanager Webhook Relay — receives alerts from Prometheus Alertmanager and forwards them to notification channels (Pachca, Email)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
