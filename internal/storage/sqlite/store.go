@@ -249,7 +249,8 @@ func (s *Store) Close() error {
 	s.logger.Debug("closing SQLite store, performing WAL checkpoint")
 
 	var busyPages, logPages, checkpointedPages int
-	err := s.db.QueryRow("PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busyPages, &logPages, &checkpointedPages)
+	ctx := context.Background()
+	err := s.db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busyPages, &logPages, &checkpointedPages)
 	if err != nil {
 		s.logger.Warn("WAL checkpoint failed, closing anyway", "error", err)
 	} else {

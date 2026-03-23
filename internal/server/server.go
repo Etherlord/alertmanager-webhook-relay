@@ -17,6 +17,7 @@ import (
 type Config struct {
 	Port            int
 	ShutdownTimeout time.Duration
+	PreStopDelay    time.Duration
 }
 
 // Server — HTTP-сервер с health checks и middleware chain.
@@ -39,6 +40,11 @@ func New(cfg Config, logger *slog.Logger, alertHandler http.Handler, checkers ..
 	if alertHandler != nil {
 		mux.Handle("POST /api/v1/alerts", alertHandler)
 		logger.Debug("registered alert webhook handler", "path", "POST /api/v1/alerts")
+	}
+
+	if cfg.PreStopDelay > 0 {
+		mux.Handle("GET /lifecycle/pre-stop", HandlePreStop(cfg.PreStopDelay, logger))
+		logger.Debug("registered preStop handler", "path", "GET /lifecycle/pre-stop", "delay", cfg.PreStopDelay)
 	}
 
 	chain := middleware.Chain(

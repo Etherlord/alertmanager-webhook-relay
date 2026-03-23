@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 // Checker — интерфейс проверки готовности компонента.
@@ -57,6 +58,27 @@ func HandleReadyz(logger *slog.Logger, checkers ...Checker) http.HandlerFunc {
 			return
 		}
 
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}
+}
+
+// HandlePreStop returns a handler for Kubernetes preStop lifecycle hook.
+// It sleeps for the given delay, allowing kube-proxy to update iptables
+// and remove the pod from endpoints before SIGTERM is sent.
+// Distroless images don't have a shell, so exec sleep is not an option.
+func HandlePreStop(delay time.Duration, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger.Info("preStop hook called, waiting before shutdown",
+			"delay", delay,
+			"remote_addr", r.RemoteAddr,
+		)
+
+		time.Sleep(delay)
+
+		logger.Info("preStop delay complete")
+
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}

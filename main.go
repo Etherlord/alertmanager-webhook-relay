@@ -116,6 +116,7 @@ func run() error {
 		server.Config{
 			Port:            cfg.Port,
 			ShutdownTimeout: cfg.ShutdownTimeout,
+			PreStopDelay:    cfg.PreStopDelay,
 		},
 		logger,
 		alertHandler,

@@ -1,0 +1,13 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "alertmanager-webhook-relay.fullname" . }}
+  labels:
+    {{- include "alertmanager-webhook-relay.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "alertmanager-webhook-relay.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -26,6 +26,14 @@ service:
 strategy:
   type: RollingUpdate  # Use Recreate for SQLite (single-writer, ReadWriteOnce PVC)
 
+# preStop delay in seconds — gives kube-proxy time to update iptables
+# before SIGTERM. Set to 0 or "" to disable.
+preStopDelay: 5
+
+# terminationGracePeriodSeconds = preStopDelay + SHUTDOWN_TIMEOUT + buffer
+# 5s (preStop) + 15s (shutdown) + 10s (buffer) = 30s
+terminationGracePeriodSeconds: 30
+
 resources:
   requests:
     cpu: 50m
@@ -44,6 +52,10 @@ persistence:
   accessMode: ReadWriteOnce
   storageClass: ""
 
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
 networkPolicy:
   enabled: true
   alertmanager:
@@ -55,6 +67,7 @@ config:
   PORT: "8080"
   LOG_LEVEL: "info"
   SHUTDOWN_TIMEOUT: "15s"
+  PRE_STOP_DELAY: "5s"
   DATABASE_DRIVER: "sqlite"
   MAX_PAYLOAD_SIZE: "1048576"
   MAX_ALERTS_PER_PAYLOAD: "100"

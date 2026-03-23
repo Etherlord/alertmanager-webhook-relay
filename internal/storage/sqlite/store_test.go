@@ -264,7 +264,7 @@ func pragmaValue(t *testing.T, db *sql.DB, pragma string) string {
 	t.Helper()
 
 	var value string
-	err := db.QueryRow("PRAGMA " + pragma).Scan(&value)
+	err := db.QueryRowContext(context.Background(), "PRAGMA "+pragma).Scan(&value)
 	require.NoError(t, err, "failed to read PRAGMA %s", pragma)
 	return value
 }

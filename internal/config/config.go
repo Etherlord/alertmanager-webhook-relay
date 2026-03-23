@@ -16,6 +16,7 @@ const (
 	minPort            = 1
 	maxPort            = 65535
 	maxShutdownTimeout = 5 * time.Minute
+	maxPreStopDelay    = 30 * time.Second
 
 	minMaxPayloadSize = 1024
 	maxMaxPayloadSize = 10485760 // 10 MB
@@ -108,6 +109,7 @@ type Config struct {
 	Port            int
 	LogLevel        string
 	ShutdownTimeout time.Duration
+	PreStopDelay    time.Duration
 
 	DatabaseDriver      string
 	DatabaseDSN         string
@@ -177,6 +179,14 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("невалидное значение SHUTDOWN_TIMEOUT=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
 		}
 		cfg.ShutdownTimeout = d
+	}
+
+	if v := os.Getenv("PRE_STOP_DELAY"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("невалидное значение PRE_STOP_DELAY=%q (%s): %w", v, err.Error(), ErrInvalidConfig)
+		}
+		cfg.PreStopDelay = d
 	}
 
 	if v := os.Getenv("DATABASE_DRIVER"); v != "" {
@@ -443,6 +453,14 @@ func (c *Config) validate() error {
 	}
 	if c.ShutdownTimeout > maxShutdownTimeout {
 		return fmt.Errorf("SHUTDOWN_TIMEOUT=%s превышает максимум %s: %w", c.ShutdownTimeout, maxShutdownTimeout, ErrInvalidConfig)
+	}
+
+	// 7a. Duration (PreStopDelay) — 0 is valid (disabled)
+	if c.PreStopDelay < 0 {
+		return fmt.Errorf("PRE_STOP_DELAY=%s не может быть отрицательным: %w", c.PreStopDelay, ErrInvalidConfig)
+	}
+	if c.PreStopDelay > maxPreStopDelay {
+		return fmt.Errorf("PRE_STOP_DELAY=%s превышает максимум %s: %w", c.PreStopDelay, maxPreStopDelay, ErrInvalidConfig)
 	}
 
 	// 8. Duration (NotifyPollInterval)
@@ -750,6 +768,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Int("port", c.Port),
 		slog.String("log_level", c.LogLevel),
 		slog.String("shutdown_timeout", c.ShutdownTimeout.String()),
+		slog.String("pre_stop_delay", c.PreStopDelay.String()),
 		slog.String("database_driver", c.DatabaseDriver),
 		slog.String("database_dsn", "[REDACTED]"),
 		slog.Int("max_payload_size", c.MaxPayloadSize),
