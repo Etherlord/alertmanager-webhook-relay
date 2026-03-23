@@ -149,6 +149,42 @@ func TestLoad_InvalidPreStopDelay(t *testing.T) {
 	}
 }
 
+func TestLoad_PreStopDelay_CrossField_ExceedsShutdownTimeout(t *testing.T) {
+	tests := []struct {
+		name     string
+		preStop  string
+		shutdown string
+	}{
+		{"equal", "15s", "15s"},
+		{"exceeds", "20s", "15s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PRE_STOP_DELAY", tt.preStop)
+			t.Setenv("SHUTDOWN_TIMEOUT", tt.shutdown)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("PRE_STOP_DELAY=%s, SHUTDOWN_TIMEOUT=%s → error: %v", tt.preStop, tt.shutdown, err)
+		})
+	}
+}
+
+func TestLoad_PreStopDelay_CrossField_LessThanShutdownTimeout(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("PRE_STOP_DELAY", "5s")
+	t.Setenv("SHUTDOWN_TIMEOUT", "15s")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 5*time.Second, cfg.PreStopDelay)
+	assert.Equal(t, 15*time.Second, cfg.ShutdownTimeout)
+}
+
 func TestLoad_InvalidPort(t *testing.T) {
 	tests := []struct {
 		name  string

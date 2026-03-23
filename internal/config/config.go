@@ -493,6 +493,14 @@ func (c *Config) validate() error {
 			c.NotifyQueueSize, c.NotifyBatchSize, ErrInvalidConfig)
 	}
 
+	// 12a. Cross-field: PreStopDelay < ShutdownTimeout
+	// PreStopDelay blocks the pod before SIGTERM; ShutdownTimeout is the drain budget after SIGTERM.
+	// If PreStopDelay >= ShutdownTimeout, Kubernetes may SIGKILL the pod before drain completes.
+	if c.PreStopDelay > 0 && c.PreStopDelay >= c.ShutdownTimeout {
+		return fmt.Errorf("PRE_STOP_DELAY=%s должен быть меньше SHUTDOWN_TIMEOUT=%s: %w",
+			c.PreStopDelay, c.ShutdownTimeout, ErrInvalidConfig)
+	}
+
 	// 13. Pachca channel (skip if disabled)
 	if c.Pachca.Enabled {
 		if err := c.validatePachca(); err != nil {

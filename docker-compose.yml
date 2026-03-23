@@ -11,6 +11,7 @@ services:
       - PORT=${PORT:-8080}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - SHUTDOWN_TIMEOUT=${SHUTDOWN_TIMEOUT:-15s}
+      - PRE_STOP_DELAY=${PRE_STOP_DELAY:-}
       - DATABASE_DRIVER=${DATABASE_DRIVER:-sqlite}
       - DATABASE_DSN=${DATABASE_DSN:-data/alerts.db}
       - MAX_PAYLOAD_SIZE=${MAX_PAYLOAD_SIZE:-1048576}
