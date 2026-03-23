@@ -19,18 +19,31 @@ type Store struct {
 	logger *slog.Logger
 }
 
-// ConfigurePragmas enables WAL mode and foreign key constraints on a SQLite connection.
-func ConfigurePragmas(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		return fmt.Errorf("sqlite enable WAL: %w", err)
+// ConfigurePragmas enables WAL mode, foreign key constraints, busy timeout,
+// and synchronous mode on a SQLite connection.
+func ConfigurePragmas(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
+	pragmas := []struct {
+		sql  string
+		name string
+	}{
+		{"PRAGMA journal_mode=WAL", "journal_mode=WAL"},
+		{"PRAGMA foreign_keys=ON", "foreign_keys=ON"},
+		{"PRAGMA busy_timeout=5000", "busy_timeout=5000"},
+		{"PRAGMA synchronous=NORMAL", "synchronous=NORMAL"},
 	}
-	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
-		return fmt.Errorf("sqlite enable foreign keys: %w", err)
+
+	for _, p := range pragmas {
+		if _, err := db.ExecContext(ctx, p.sql); err != nil {
+			return fmt.Errorf("sqlite pragma %s: %w", p.name, err)
+		}
+		logger.Debug("SQLite pragma set", "pragma", p.name)
 	}
+
 	return nil
 }
 
-// New creates a new SQLite store, enables WAL mode and foreign keys.
+// New creates a new SQLite store, enables WAL mode, foreign keys, busy timeout,
+// and sets connection pool to single connection.
 // Migrations must be applied externally (goose) before calling New.
 func New(dsn string, logger *slog.Logger) (*Store, error) {
 	logger.Debug("opening SQLite database", "dsn", dsn)
@@ -40,13 +53,16 @@ func New(dsn string, logger *slog.Logger) (*Store, error) {
 		return nil, fmt.Errorf("sqlite open: %w", err)
 	}
 
+	// Serialize all writes through a single connection.
+	// SQLite only supports one writer at a time; multiple connections cause SQLITE_BUSY.
+	db.SetMaxOpenConns(1)
+	logger.Debug("SQLite connection pool configured", "max_open_conns", 1)
+
 	ctx := context.Background()
-	if err := ConfigurePragmas(ctx, db); err != nil {
+	if err := ConfigurePragmas(ctx, db, logger); err != nil {
 		db.Close()
 		return nil, err
 	}
-
-	logger.Debug("SQLite pragmas set", "journal_mode", "WAL", "foreign_keys", "ON")
 
 	s := &Store{db: db, logger: logger}
 
@@ -202,13 +218,47 @@ func (s *Store) Name() string {
 	return "sqlite"
 }
 
-// Check verifies the database connection is alive.
+// Check performs a lightweight write test to verify the database is writable.
+// This tests write lock acquisition, WAL write, and disk I/O —
+// critical for rolling update readiness (new pod must be able to write).
 func (s *Store) Check(ctx context.Context) error {
-	return s.db.PingContext(ctx)
+	result, err := s.db.ExecContext(ctx, "UPDATE health_check SET checked_at = datetime('now') WHERE id = 1")
+	if err != nil {
+		s.logger.Warn("readiness write check failed", "error", err)
+		return fmt.Errorf("sqlite write check: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("sqlite write check rows affected: %w", err)
+	}
+
+	if rows != 1 {
+		s.logger.Warn("readiness write check: health_check row missing")
+		return fmt.Errorf("sqlite write check: expected 1 row affected, got %d", rows)
+	}
+
+	s.logger.Debug("readiness write check passed")
+	return nil
 }
 
-// Close closes the database connection.
+// Close performs a WAL checkpoint and closes the database connection.
+// The checkpoint ensures all WAL data is flushed to the main database file,
+// which is critical during rolling updates to prevent data loss.
 func (s *Store) Close() error {
-	s.logger.Debug("closing SQLite store")
+	s.logger.Debug("closing SQLite store, performing WAL checkpoint")
+
+	var busyPages, logPages, checkpointedPages int
+	err := s.db.QueryRow("PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busyPages, &logPages, &checkpointedPages)
+	if err != nil {
+		s.logger.Warn("WAL checkpoint failed, closing anyway", "error", err)
+	} else {
+		s.logger.Info("WAL checkpoint completed",
+			"log_pages", logPages,
+			"checkpointed_pages", checkpointedPages,
+			"busy_pages", busyPages,
+		)
+	}
+
 	return s.db.Close()
 }
