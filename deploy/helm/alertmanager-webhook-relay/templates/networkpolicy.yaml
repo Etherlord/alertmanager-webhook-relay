@@ -15,14 +15,18 @@ spec:
   ingress:
     # Allow inbound traffic from Alertmanager on port 8080
     - from:
-        {{- with .Values.networkPolicy.alertmanager.namespaceSelector }}
         - namespaceSelector:
+            {{- with .Values.networkPolicy.alertmanager.namespaceSelector }}
             {{- toYaml . | nindent 12 }}
-        {{- end }}
-        {{- with .Values.networkPolicy.alertmanager.podSelector }}
-        - podSelector:
+            {{- else }}
+            {}
+            {{- end }}
+          podSelector:
+            {{- with .Values.networkPolicy.alertmanager.podSelector }}
             {{- toYaml . | nindent 12 }}
-        {{- end }}
+            {{- else }}
+            {}
+            {{- end }}
       ports:
         - port: 8080
           protocol: TCP

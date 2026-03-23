@@ -20,7 +20,7 @@ FROM gcr.io/distroless/static-debian13:nonroot AS prod
 
 LABEL org.opencontainers.image.title="alertmanager-webhook-relay" \
       org.opencontainers.image.description="Receives alerts from Prometheus Alertmanager and forwards them to notification channels" \
-      org.opencontainers.image.source="https://github.com/alertmanager-webhook-relay" \
+      org.opencontainers.image.source="https://github.com/Etherlord/alertmanager-webhook-relay" \
       org.opencontainers.image.licenses="MIT"
 
 COPY --from=builder /app/alertmanager-webhook-relay /alertmanager-webhook-relay

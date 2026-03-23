@@ -24,7 +24,7 @@ service:
   port: 8080
 
 strategy:
-  type: Recreate  # SQLite single-writer; switch to RollingUpdate for PostgreSQL
+  type: RollingUpdate  # Use Recreate for SQLite (single-writer, ReadWriteOnce PVC)
 
 resources:
   requests:

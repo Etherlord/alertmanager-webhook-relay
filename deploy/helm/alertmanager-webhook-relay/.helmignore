@@ -1,0 +1,11 @@
+# VCS
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# AI/tooling
+.ai-factory/
+.claude/
