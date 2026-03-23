@@ -1,0 +1,60 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "alertmanager-webhook-relay.fullname" . }}
+  labels:
+    {{- include "alertmanager-webhook-relay.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "alertmanager-webhook-relay.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inbound traffic from Alertmanager on port 8080
+    - from:
+        {{- with .Values.networkPolicy.alertmanager.namespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+        {{- with .Values.networkPolicy.alertmanager.podSelector }}
+        - podSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # Allow DNS resolution (kube-dns)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow SMTP (Email notifications)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 25
+          protocol: TCP
+        - port: 465
+          protocol: TCP
+        - port: 587
+          protocol: TCP
+    # Allow HTTPS (Pachca API)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+    # Add PostgreSQL egress rule when migrating to HA mode
+{{- end }}
