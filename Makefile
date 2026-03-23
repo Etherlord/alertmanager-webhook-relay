@@ -1,4 +1,4 @@
-.PHONY: help build test test-race test-cover test-integration fmt vet lint check clean migrate-up migrate-down migrate-status migrate-create
+.PHONY: help build test test-race test-cover test-integration fmt vet lint check helm-lint docker-lint check-all clean migrate-up migrate-down migrate-status migrate-create
 
 APP_NAME := alertmanager-webhook-relay
 RUN := docker compose --profile tools run --rm dev
@@ -42,6 +42,14 @@ lint: ## Запустить линтер
 	$(RUN) golangci-lint run
 
 check: fmt vet lint test-race ## Полная проверка: fmt + vet + lint + test-race
+
+helm-lint: ## Проверить Helm chart
+	docker compose --profile tools run --rm helm lint deploy/helm/alertmanager-webhook-relay
+
+docker-lint: ## Проверить Dockerfile (hadolint)
+	docker compose --profile tools run --rm hadolint hadolint Dockerfile
+
+check-all: check helm-lint docker-lint ## Полная проверка: Go + Helm + Dockerfile
 
 ## Миграции
 

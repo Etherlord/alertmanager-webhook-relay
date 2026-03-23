@@ -1,0 +1,8 @@
+.git
+.ai-factory
+.claude
+deploy
+data/
+coverage.*
+*.md
+TODO.md

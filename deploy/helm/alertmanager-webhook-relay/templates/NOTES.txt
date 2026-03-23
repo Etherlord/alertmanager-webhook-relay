@@ -1,0 +1,22 @@
+Alertmanager Webhook Relay has been deployed.
+
+1. Check the application status:
+   kubectl get pods -l "app.kubernetes.io/name={{ include "alertmanager-webhook-relay.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+2. Get the application URL:
+   {{- if eq .Values.service.type "ClusterIP" }}
+   kubectl port-forward svc/{{ include "alertmanager-webhook-relay.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+   {{- end }}
+
+3. Verify health endpoints:
+   curl http://localhost:{{ .Values.service.port }}/healthz
+   curl http://localhost:{{ .Values.service.port }}/readyz
+
+4. Configure Alertmanager to send webhooks:
+   receivers:
+     - name: 'webhook-relay'
+       webhook_configs:
+         - url: 'http://{{ include "alertmanager-webhook-relay.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/api/v1/alerts'
+
+IMPORTANT: Update secret values before production use:
+   kubectl edit secret {{ include "alertmanager-webhook-relay.fullname" . }}

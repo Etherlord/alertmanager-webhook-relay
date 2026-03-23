@@ -55,5 +55,21 @@ services:
     profiles:
       - db
 
+  helm:
+    image: alpine/helm:3
+    volumes:
+      - .:/app
+    working_dir: /app
+    profiles:
+      - tools
+
+  hadolint:
+    image: hadolint/hadolint:v2.14.0-debian
+    volumes:
+      - .:/app
+    working_dir: /app
+    profiles:
+      - tools
+
 volumes:
   gomodcache:
