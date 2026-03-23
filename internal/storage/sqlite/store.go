@@ -55,6 +55,7 @@ func New(dsn string, logger *slog.Logger) (*Store, error) {
 
 	// Serialize all writes through a single connection.
 	// SQLite only supports one writer at a time; multiple connections cause SQLITE_BUSY.
+	// busy_timeout pragma above is a safety net in case MaxOpenConns is changed later.
 	db.SetMaxOpenConns(1)
 	logger.Debug("SQLite connection pool configured", "max_open_conns", 1)
 

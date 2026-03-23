@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"alertmanager-webhook-relay/internal/logging"
 	"alertmanager-webhook-relay/internal/server"
@@ -150,4 +151,60 @@ func TestReadyz_MixedCheckers(t *testing.T) {
 	// Успешные проверки не должны попадать в checks.
 	_, hasDB := checks["db"]
 	assert.False(t, hasDB, "successful checker should not appear in error checks")
+}
+
+func TestPreStop_Returns200AndSleeps(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newLogger(&buf)
+
+	delay := 50 * time.Millisecond
+	handler := server.HandlePreStop(delay, logger)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/lifecycle/pre-stop", http.NoBody)
+
+	start := time.Now()
+	handler.ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "ok", body["status"])
+
+	assert.GreaterOrEqual(t, elapsed, delay, "handler should sleep for at least the configured delay")
+}
+
+func TestPreStop_ZeroDelay(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newLogger(&buf)
+
+	handler := server.HandlePreStop(0, logger)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/lifecycle/pre-stop", http.NoBody)
+
+	start := time.Now()
+	handler.ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Less(t, elapsed, 50*time.Millisecond, "zero delay should return immediately")
+}
+
+func TestPreStop_LogsDelayInfo(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newLogger(&buf)
+
+	handler := server.HandlePreStop(10*time.Millisecond, logger)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/lifecycle/pre-stop", http.NoBody)
+	handler.ServeHTTP(rec, req)
+
+	logs := buf.String()
+	assert.Contains(t, logs, "preStop hook called")
+	assert.Contains(t, logs, "preStop delay complete")
 }

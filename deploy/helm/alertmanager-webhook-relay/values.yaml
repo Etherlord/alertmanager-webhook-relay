@@ -26,12 +26,15 @@ service:
 strategy:
   type: RollingUpdate  # Use Recreate for SQLite (single-writer, ReadWriteOnce PVC)
 
-# preStop delay in seconds — gives kube-proxy time to update iptables
-# before SIGTERM. Set to 0 or "" to disable.
+# preStop delay — controls Helm lifecycle hook rendering.
+# Set to 0 or "" to disable. The actual sleep duration is taken from
+# config.PRE_STOP_DELAY ENV variable (duration string, e.g. "5s").
 preStopDelay: 5
 
+# IMPORTANT: update this value when changing preStopDelay or SHUTDOWN_TIMEOUT.
 # terminationGracePeriodSeconds = preStopDelay + SHUTDOWN_TIMEOUT + buffer
 # 5s (preStop) + 15s (shutdown) + 10s (buffer) = 30s
+# If this value is too low, Kubernetes will SIGKILL the pod before graceful drain completes.
 terminationGracePeriodSeconds: 30
 
 resources:
@@ -52,6 +55,9 @@ persistence:
   accessMode: ReadWriteOnce
   storageClass: ""
 
+# PDB is useful only with replicaCount >= 2. With a single replica,
+# maxUnavailable: 1 allows eviction anyway. Keep enabled as a safe default
+# so scaling up automatically gets PDB protection.
 pdb:
   enabled: true
   maxUnavailable: 1

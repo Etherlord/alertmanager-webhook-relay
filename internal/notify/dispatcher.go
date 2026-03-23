@@ -59,6 +59,10 @@ func (d *Dispatcher) Check(_ context.Context) error {
 
 // Run starts the polling loop. It blocks until the context is cancelled.
 // Returns nil on graceful shutdown.
+//
+// Shutdown guarantees: all in-flight sends complete, queued items are drained.
+// Items still in the database as "pending" but not yet polled will remain pending
+// and be processed after the next pod starts.
 func (d *Dispatcher) Run(ctx context.Context) error {
 	d.logger.Info("dispatcher starting")
 
@@ -229,7 +233,7 @@ func (d *Dispatcher) shutdown(queues map[string]*Queue, workerWg *sync.WaitGroup
 	d.logger.Debug("waiting for workers to drain and finish")
 	workerWg.Wait()
 
-	d.logger.Debug("cancelling worker context")
+	d.logger.Debug("releasing worker context resources")
 	workerCancel()
 
 	close(resultCh)

@@ -17,6 +17,7 @@ func setDefaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("SHUTDOWN_TIMEOUT", "")
+	t.Setenv("PRE_STOP_DELAY", "")
 	t.Setenv("DATABASE_DRIVER", "")
 	t.Setenv("DATABASE_DSN", "")
 	t.Setenv("MAX_PAYLOAD_SIZE", "")
@@ -49,6 +50,7 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, 8080, cfg.Port)
 	assert.Equal(t, "info", cfg.LogLevel)
 	assert.Equal(t, 15*time.Second, cfg.ShutdownTimeout)
+	assert.Equal(t, time.Duration(0), cfg.PreStopDelay)
 	assert.Equal(t, "sqlite", cfg.DatabaseDriver)
 	assert.Equal(t, "data/alerts.db", cfg.DatabaseDSN)
 	assert.Equal(t, 1048576, cfg.MaxPayloadSize)
@@ -103,6 +105,48 @@ func TestLoad_CustomValues(t *testing.T) {
 
 	t.Logf("custom: port=%d, db_driver=%s, db_dsn=%s, max_payload=%d, max_alerts=%d",
 		cfg.Port, cfg.DatabaseDriver, cfg.DatabaseDSN, cfg.MaxPayloadSize, cfg.MaxAlertsPerPayload)
+}
+
+func TestLoad_PreStopDelay_CustomValue(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("PRE_STOP_DELAY", "10s")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Second, cfg.PreStopDelay)
+}
+
+func TestLoad_PreStopDelay_Zero(t *testing.T) {
+	setDefaults(t)
+	t.Setenv("PRE_STOP_DELAY", "0s")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, time.Duration(0), cfg.PreStopDelay)
+}
+
+func TestLoad_InvalidPreStopDelay(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"invalid format", "not-a-duration"},
+		{"negative", "-5s"},
+		{"too large", "60s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setDefaults(t)
+			t.Setenv("PRE_STOP_DELAY", tt.value)
+
+			cfg, err := Load()
+			assert.Nil(t, cfg)
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+
+			t.Logf("PRE_STOP_DELAY=%q → error: %v", tt.value, err)
+		})
+	}
 }
 
 func TestLoad_InvalidPort(t *testing.T) {
