@@ -316,6 +316,160 @@ func TestDispatcher_ReadinessCheck(t *testing.T) {
 	<-done
 }
 
+func TestDispatcher_ShutdownDrainsQueuedNotifications(t *testing.T) {
+	// Scenario: notifications are enqueued, then dispatcher shuts down.
+	// All queued items must be drained and sent before workers exit.
+	store := &mockStore{
+		pending: []alerts.AlertGroup{
+			{GroupKey: "drain-1", Status: alerts.StatusFiring, Receiver: "test"},
+			{GroupKey: "drain-2", Status: alerts.StatusFiring, Receiver: "test"},
+			{GroupKey: "drain-3", Status: alerts.StatusFiring, Receiver: "test"},
+		},
+	}
+
+	// Slow channel to ensure items are still in-flight during shutdown.
+	ch := &mockChannel{
+		name: "slow-drain",
+		sendFn: func(_ context.Context, _ *Notification) error {
+			time.Sleep(50 * time.Millisecond)
+			return nil
+		},
+	}
+
+	cfg := DispatcherConfig{
+		PollInterval: 20 * time.Millisecond,
+		BatchSize:    10,
+		QueueSize:    10,
+		SendTimeout:  5 * time.Second,
+	}
+
+	d := NewDispatcher(store, []Channel{ch}, cfg, testLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Run(ctx)
+	}()
+
+	// Wait for dispatcher to poll and enqueue items.
+	time.Sleep(150 * time.Millisecond)
+
+	// Shut down — workers must drain remaining items.
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatcher did not shut down in time")
+	}
+
+	// All 3 notifications must have been sent (not dropped).
+	assert.Equal(t, 3, ch.callCount(), "all queued notifications must be drained on shutdown")
+}
+
+func TestDispatcher_ShutdownDrainsEmptyQueues(t *testing.T) {
+	// Shutdown with no pending items should complete quickly.
+	store := &mockStore{}
+	ch := &mockChannel{name: "empty-drain"}
+
+	cfg := DispatcherConfig{
+		PollInterval: 50 * time.Millisecond,
+		BatchSize:    10,
+		QueueSize:    10,
+		SendTimeout:  5 * time.Second,
+	}
+
+	d := NewDispatcher(store, []Channel{ch}, cfg, testLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Run(ctx)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatcher did not shut down with empty queues")
+	}
+
+	assert.Equal(t, 0, ch.callCount())
+}
+
+func TestDispatcher_InFlightSendCompletesBeforeExit(t *testing.T) {
+	// An in-flight Send must complete successfully even after ctx cancel.
+	// This verifies the worker uses a fresh context for send during drain,
+	// not the cancelled dispatcher context.
+	sendStarted := make(chan struct{})
+	sendDone := make(chan struct{})
+
+	store := &mockStore{
+		pending: []alerts.AlertGroup{
+			{GroupKey: "inflight-1", Status: alerts.StatusFiring, Receiver: "test"},
+		},
+	}
+
+	ch := &mockChannel{
+		name: "inflight",
+		sendFn: func(ctx context.Context, _ *Notification) error {
+			close(sendStarted)
+			// Simulate slow send — must NOT fail due to cancelled context.
+			time.Sleep(200 * time.Millisecond)
+			close(sendDone)
+			// If ctx was derived from cancelled parent, this would fail.
+			return ctx.Err()
+		},
+	}
+
+	cfg := DispatcherConfig{
+		PollInterval: 20 * time.Millisecond,
+		BatchSize:    10,
+		QueueSize:    10,
+		SendTimeout:  5 * time.Second,
+	}
+
+	d := NewDispatcher(store, []Channel{ch}, cfg, testLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Run(ctx)
+	}()
+
+	// Wait for send to start.
+	select {
+	case <-sendStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("send did not start in time")
+	}
+
+	// Cancel while send is in progress.
+	cancel()
+
+	// Send must complete (not be aborted by cancelled ctx).
+	select {
+	case <-sendDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("in-flight send was interrupted")
+	}
+
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatcher did not shut down")
+	}
+
+	// The send must have succeeded (ctx.Err() == nil in send context).
+	sentKeys := store.getSentKeys()
+	assert.Contains(t, sentKeys, "inflight-1", "in-flight notification must be marked sent")
+}
+
 func TestDispatcher_GetPendingError(t *testing.T) {
 	store := &mockStore{
 		getErr: errors.New("db connection lost"),

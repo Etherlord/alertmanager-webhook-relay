@@ -152,21 +152,31 @@ func run() error {
 		cleanup()
 		return err
 	case <-ctx.Done():
-		logger.Info("shutdown signal received")
+		logger.Info("shutdown signal received, starting graceful shutdown")
 	}
 
-	// Shutdown sequence: srv.Shutdown → dispatcher stops → store.Close
+	// Shutdown sequence: srv.Shutdown → dispatcher drains → store.Close (with WAL checkpoint)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer shutdownCancel()
 
+	logger.Info("step 1/3: shutting down HTTP server")
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("shutdown error", "error", err)
+		logger.Error("HTTP server shutdown error", "error", err)
 		cleanup()
 		return err
 	}
 
-	logger.Info("stopping dispatcher")
-	cleanup()
+	logger.Info("step 2/3: stopping dispatcher, draining in-flight notifications")
+	dispatcherCancel()
+	if err := <-dispatcherDone; err != nil {
+		logger.Error("dispatcher error", "error", err)
+	}
+
+	logger.Info("step 3/3: closing store (WAL checkpoint)")
+	if err := store.Close(); err != nil {
+		logger.Error("failed to close store", "error", err)
+	}
+
 	logger.Info("shutdown complete")
 
 	return nil

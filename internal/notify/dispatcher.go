@@ -78,13 +78,17 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		workers = append(workers, w)
 	}
 
+	// Workers get a separate context so they stay alive during drain.
+	// Shutdown sequence: close queues → workers drain remaining items → workerCancel.
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+
 	// Start workers.
 	var workerWg sync.WaitGroup
 	for _, w := range workers {
 		workerWg.Add(1)
 		go func(w *Worker) {
 			defer workerWg.Done()
-			w.Run(ctx)
+			w.Run(workerCtx)
 		}(w)
 	}
 
@@ -101,7 +105,7 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			d.logger.Info("dispatcher shutting down")
-			d.shutdown(queues, &workerWg, resultCh)
+			d.shutdown(queues, &workerWg, workerCancel, resultCh)
 			return nil
 		case <-ticker.C:
 			d.poll(ctx, queues, resultCh)
@@ -168,33 +172,31 @@ func (d *Dispatcher) fanOutAndCollect(
 	}
 
 	// Collect results from workers.
+	// Once items are enqueued, we MUST wait for all results —
+	// even during shutdown. Workers use bounded sendTimeout,
+	// so this won't hang indefinitely.
 	allOK := true
 	for range enqueued {
-		select {
-		case r := <-resultCh:
-			if r.GroupKey != n.GroupKey {
-				d.logger.Error("result group key mismatch",
-					"expected", n.GroupKey,
-					"got", r.GroupKey,
-					"channel", r.Channel,
-				)
-			}
-			if r.Err != nil {
-				d.logger.Warn("channel delivery failed",
-					"channel", r.Channel,
-					"group_key", r.GroupKey,
-					"error", r.Err,
-				)
-				allOK = false
-			} else {
-				d.logger.Debug("channel delivery succeeded",
-					"channel", r.Channel,
-					"group_key", r.GroupKey,
-				)
-			}
-		case <-ctx.Done():
-			d.logger.Warn("context cancelled while collecting results", "group_key", n.GroupKey)
-			return
+		r := <-resultCh
+		if r.GroupKey != n.GroupKey {
+			d.logger.Error("result group key mismatch",
+				"expected", n.GroupKey,
+				"got", r.GroupKey,
+				"channel", r.Channel,
+			)
+		}
+		if r.Err != nil {
+			d.logger.Warn("channel delivery failed",
+				"channel", r.Channel,
+				"group_key", r.GroupKey,
+				"error", r.Err,
+			)
+			allOK = false
+		} else {
+			d.logger.Debug("channel delivery succeeded",
+				"channel", r.Channel,
+				"group_key", r.GroupKey,
+			)
 		}
 	}
 
@@ -206,7 +208,9 @@ func (d *Dispatcher) fanOutAndCollect(
 	}
 
 	d.logger.Info("all channels succeeded, marking sent", "group_key", n.GroupKey)
-	if err := d.store.MarkSent(ctx, n.GroupKey); err != nil {
+	// Use background context for MarkSent — the dispatcher ctx may be cancelled
+	// during shutdown, but we must still persist the sent status.
+	if err := d.store.MarkSent(context.Background(), n.GroupKey); err != nil {
 		d.logger.Error("failed to mark group as sent",
 			"group_key", n.GroupKey,
 			"error", err,
@@ -214,16 +218,19 @@ func (d *Dispatcher) fanOutAndCollect(
 	}
 }
 
-// shutdown gracefully stops all queues and waits for workers to finish.
-func (d *Dispatcher) shutdown(queues map[string]*Queue, workerWg *sync.WaitGroup, resultCh chan SendResult) {
-	d.logger.Info("closing all queues")
+// shutdown gracefully stops all queues, waits for workers to drain, then cancels worker context.
+func (d *Dispatcher) shutdown(queues map[string]*Queue, workerWg *sync.WaitGroup, workerCancel context.CancelFunc, resultCh chan SendResult) {
+	d.logger.Info("closing all queues, workers will drain remaining items")
 	for name, q := range queues {
 		d.logger.Debug("closing queue", "queue_name", name)
 		q.Close()
 	}
 
-	d.logger.Debug("waiting for workers to finish")
+	d.logger.Debug("waiting for workers to drain and finish")
 	workerWg.Wait()
+
+	d.logger.Debug("cancelling worker context")
+	workerCancel()
 
 	close(resultCh)
 	// Drain any remaining results.

@@ -39,12 +39,14 @@ func (w *Worker) Run(ctx context.Context) {
 	w.logger.Info("worker started", "channel", w.ch.Name())
 	defer w.logger.Info("worker stopped", "channel", w.ch.Name())
 
+	processed := 0
 	for {
 		n, err := w.queue.Dequeue(ctx)
 		if err != nil {
-			w.logger.Debug("worker dequeue ended",
+			w.logger.Info("worker dequeue ended",
 				"channel", w.ch.Name(),
-				"error", err,
+				"processed", processed,
+				"reason", err.Error(),
 			)
 			return
 		}
@@ -54,7 +56,10 @@ func (w *Worker) Run(ctx context.Context) {
 			"group_key", n.GroupKey,
 		)
 
-		sendCtx, sendCancel := context.WithTimeout(ctx, w.sendTimeout)
+		// Use background context for send timeout so in-flight sends
+		// are not aborted when the dispatcher context is cancelled.
+		// Workers stay alive during drain via a separate workerCtx.
+		sendCtx, sendCancel := context.WithTimeout(context.Background(), w.sendTimeout)
 		sendErr := w.ch.Send(sendCtx, n)
 		sendCancel()
 
@@ -76,5 +81,6 @@ func (w *Worker) Run(ctx context.Context) {
 			Channel:  w.ch.Name(),
 			Err:      sendErr,
 		}
+		processed++
 	}
 }
