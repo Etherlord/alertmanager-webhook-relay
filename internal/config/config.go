@@ -639,6 +639,9 @@ func (c *Config) validateEmail() error {
 	if _, ok := validTLSModes[c.Email.TLSMode]; !ok {
 		return fmt.Errorf("EMAIL_TLS_MODE=%q должен быть starttls/tls/none: %w", c.Email.TLSMode, ErrInvalidConfig)
 	}
+	if c.Email.TLSMode == "none" {
+		slog.Warn("EMAIL_TLS_MODE=none: SMTP-трафик не шифруется, используйте только в dev/test окружениях")
+	}
 
 	// Password: printable ASCII, max length (only if set)
 	if c.Email.Password != "" {

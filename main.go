@@ -54,7 +54,7 @@ func run() error {
 		return fmt.Errorf("unsupported database driver: %s", cfg.DatabaseDriver)
 	}
 
-	logger.Info("database initialized", "driver", cfg.DatabaseDriver, "dsn", cfg.DatabaseDSN)
+	logger.Info("database initialized", "driver", cfg.DatabaseDriver)
 
 	// Build alert service and handler.
 	alertSvc := alerts.NewService(store, logger, cfg.MaxAlertsPerPayload)

@@ -36,7 +36,7 @@ func HandleReadyz(logger *slog.Logger, checkers ...Checker) http.HandlerFunc {
 		failed := make(map[string]string)
 		for _, c := range checkers {
 			if err := c.Check(r.Context()); err != nil {
-				failed[c.Name()] = err.Error()
+				failed[c.Name()] = "unhealthy"
 				logger.Warn("readiness check failed",
 					"check_name", c.Name(),
 					"error", err,

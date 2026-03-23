@@ -112,7 +112,10 @@ func TestReadyz_FailedChecker(t *testing.T) {
 
 	checks, ok := body["checks"].(map[string]any)
 	require.True(t, ok, "checks should be a map")
-	assert.Equal(t, "connection refused", checks["db"])
+	// Ответ содержит generic статус, а не внутреннюю ошибку.
+	assert.Equal(t, "unhealthy", checks["db"])
+	assert.NotContains(t, rec.Body.String(), "connection refused",
+		"internal error details must not leak to the client")
 
 	// Проверяем WARN лог (последняя строка в буфере).
 	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
@@ -147,7 +150,10 @@ func TestReadyz_MixedCheckers(t *testing.T) {
 
 	checks, ok := body["checks"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "timeout", checks["cache"])
+	// Ответ содержит generic статус, а не внутреннюю ошибку.
+	assert.Equal(t, "unhealthy", checks["cache"])
+	assert.NotContains(t, rec.Body.String(), "timeout",
+		"internal error details must not leak to the client")
 	// Успешные проверки не должны попадать в checks.
 	_, hasDB := checks["db"]
 	assert.False(t, hasDB, "successful checker should not appear in error checks")
