@@ -56,7 +56,7 @@ services:
       - db
 
   helm:
-    image: alpine/helm:3
+    image: alpine/helm:3.20.1
     volumes:
       - .:/app
     working_dir: /app
