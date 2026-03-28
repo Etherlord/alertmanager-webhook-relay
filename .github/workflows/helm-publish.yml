@@ -35,7 +35,7 @@ jobs:
     env:
       CHART_DIR: deploy/helm/alertmanager-webhook-relay
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -44,7 +44,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.17.3
 
@@ -56,7 +56,7 @@ jobs:
       - name: Package Helm chart
         run: helm package "$CHART_DIR"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: gh-pages
           path: gh-pages
