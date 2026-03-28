@@ -44,16 +44,25 @@ docker compose --profile tools run --rm -p 8080:8080 dev ./alertmanager-webhook-
 - Helm 3.x
 - PV provisioner (для SQLite persistence)
 
+### Добавление Helm-репозитория
+
+Чарт публикуется в Helm-репозитории на GitHub Pages:
+
+```bash
+helm repo add alertmanager-webhook-relay https://etherlord.github.io/alertmanager-webhook-relay
+helm repo update
+```
+
 ### Установка
 
 ```bash
-helm install my-relay ./deploy/helm/alertmanager-webhook-relay
+helm install my-relay alertmanager-webhook-relay/alertmanager-webhook-relay
 ```
 
 С кастомными values:
 
 ```bash
-helm install my-relay ./deploy/helm/alertmanager-webhook-relay \
+helm install my-relay alertmanager-webhook-relay/alertmanager-webhook-relay \
   --set secret.DATABASE_DSN="file:/data/alerts.db?_journal=WAL" \
   --set secret.PACHCA_TOKEN="your-token" \
   --set config.PACHCA_CHAT_ID="12345"
@@ -62,8 +71,10 @@ helm install my-relay ./deploy/helm/alertmanager-webhook-relay \
 Или через файл:
 
 ```bash
-helm install my-relay ./deploy/helm/alertmanager-webhook-relay -f my-values.yaml
+helm install my-relay alertmanager-webhook-relay/alertmanager-webhook-relay -f my-values.yaml
 ```
+
+> **Для разработки** можно ставить из локального чарта: `helm install my-relay ./deploy/helm/alertmanager-webhook-relay`
 
 ### Минимальный деплой (SQLite + Pachca)
 

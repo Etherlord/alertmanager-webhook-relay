@@ -118,6 +118,23 @@ make migrate-status   # статус
 | `migrate-down` | Откатить последнюю миграцию |
 | `clean` | Удалить артефакты |
 
+## Установка в Kubernetes
+
+Добавьте Helm-репозиторий и установите чарт:
+
+```bash
+helm repo add alertmanager-webhook-relay https://etherlord.github.io/alertmanager-webhook-relay
+helm repo update
+```
+
+```bash
+helm install my-relay alertmanager-webhook-relay/alertmanager-webhook-relay \
+  --set secret.PACHCA_TOKEN="your-token" \
+  --set config.PACHCA_CHAT_ID="12345"
+```
+
+Подробнее о параметрах и вариантах деплоя — в [документации по деплою](deployment.md).
+
 ## Дальнейшие шаги
 
 - [Конфигурация](configuration.md) — все ENV-переменные
