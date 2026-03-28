@@ -2,8 +2,19 @@ apiVersion: v1
 entries:
   alertmanager-webhook-relay:
   - apiVersion: v2
+    appVersion: 0.1.2
+    created: "2026-03-28T11:51:08.280361518Z"
+    description: Alertmanager Webhook Relay — receives alerts from Prometheus Alertmanager
+      and forwards them to notification channels (Pachca, Email)
+    digest: df4fbaeb5c83f091c20ac8f52af4dff36540ff31c74d7806b98c4cff54d91491
+    name: alertmanager-webhook-relay
+    type: application
+    urls:
+    - https://etherlord.github.io/alertmanager-webhook-relay/alertmanager-webhook-relay-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-03-28T11:10:32.431115883Z"
+    created: "2026-03-28T11:51:08.279807851Z"
     description: Alertmanager Webhook Relay — receives alerts from Prometheus Alertmanager
       and forwards them to notification channels (Pachca, Email)
     digest: ffa6c345f9022bf30ef683f7501288f7651a85ba22476821d28bb0b7293d482c
@@ -12,4 +23,4 @@ entries:
     urls:
     - https://etherlord.github.io/alertmanager-webhook-relay/alertmanager-webhook-relay-0.1.1.tgz
     version: 0.1.1
-generated: "2026-03-28T11:10:32.430506008Z"
+generated: "2026-03-28T11:51:08.279136983Z"
