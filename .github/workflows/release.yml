@@ -60,15 +60,21 @@ jobs:
 
       - name: Build binaries
         run: |
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -buildvcs=false -o alertmanager-webhook-relay-linux-amd64 .
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -buildvcs=false -o alertmanager-webhook-relay-linux-arm64 .
+          LDFLAGS="-s -w -X main.version=${{ env.VERSION }}"
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -buildvcs=false -ldflags="$LDFLAGS" -o alertmanager-webhook-relay-linux-amd64 .
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -buildvcs=false -ldflags="$LDFLAGS" -o alertmanager-webhook-relay-linux-arm64 .
+
+      - name: Generate checksums
+        run: sha256sum alertmanager-webhook-relay-linux-* > checksums.txt
 
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          append_body: true
           body: |
             ## Docker Image
             `ghcr.io/etherlord/alertmanager-webhook-relay:${{ env.VERSION }}`
           files: |
             alertmanager-webhook-relay-linux-amd64
             alertmanager-webhook-relay-linux-arm64
+            checksums.txt
