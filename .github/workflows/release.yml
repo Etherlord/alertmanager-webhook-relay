@@ -16,8 +16,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: docker/setup-qemu-action@v3
 
@@ -35,6 +33,7 @@ jobs:
           images: ghcr.io/etherlord/alertmanager-webhook-relay
           tags: |
             type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
       - uses: docker/build-push-action@v6
         with:
