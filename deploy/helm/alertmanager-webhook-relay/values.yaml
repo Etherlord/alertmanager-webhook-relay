@@ -4,7 +4,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: alertmanager-webhook-relay
+  repository: ghcr.io/etherlord/alertmanager-webhook-relay
   tag: ""  # defaults to Chart.appVersion
   pullPolicy: IfNotPresent
 
