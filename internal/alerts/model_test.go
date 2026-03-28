@@ -2,8 +2,6 @@ package alerts
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,8 +15,44 @@ func TestAlertStatus_Constants(t *testing.T) {
 }
 
 func TestAlertGroup_UnmarshalJSON_SingleAlert(t *testing.T) {
-	// .scripts/alert-samples/01 — one firing alert
-	data := loadSample(t, "01_2026-03-16T20-22-58_plus_04-00_LogErrors.json")
+	data := []byte(`{
+  "receiver": "telegram",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertgroup": "vmoperator",
+        "alertname": "LogErrors",
+        "severity": "warning"
+      },
+      "annotations": {
+        "description": "Operator has too many errors at logs: 0.003, check operator logs",
+        "summary": "Too many errors at logs of operator: 0.003"
+      },
+      "startsAt": "2026-03-16T08:38:50Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://vmalert-vm-alert:8080/vmalert/alert?group_id=123&alert_id=456",
+      "fingerprint": "b76d9da35df35672"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "LogErrors"
+  },
+  "commonLabels": {
+    "alertgroup": "vmoperator",
+    "alertname": "LogErrors",
+    "severity": "warning"
+  },
+  "commonAnnotations": {
+    "description": "Operator has too many errors at logs: 0.003, check operator logs",
+    "summary": "Too many errors at logs of operator: 0.003"
+  },
+  "externalURL": "http://vmalertmanager-alertmanager-1:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical|warning|major\"}:{alertname=\"LogErrors\"}",
+  "truncatedAlerts": 0
+}`)
 
 	var group AlertGroup
 	err := json.Unmarshal(data, &group)
@@ -57,8 +91,76 @@ func TestAlertGroup_UnmarshalJSON_SingleAlert(t *testing.T) {
 }
 
 func TestAlertGroup_UnmarshalJSON_MultipleAlerts(t *testing.T) {
-	// .scripts/alert-samples/06 — three alerts (2 firing + 1 resolved)
-	data := loadSample(t, "06_2026-03-16T20-22-58_plus_04-00_ServiceDown.json")
+	data := []byte(`{
+  "receiver": "telegram",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertgroup": "vm-health",
+        "alertname": "ServiceDown",
+        "instance": "10.244.19.201:9093",
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "10.244.19.201:9093 of job vmalertmanager has been down for more than 2 minutes.",
+        "summary": "Service vmalertmanager is down on 10.244.19.201:9093"
+      },
+      "startsAt": "2026-03-16T07:15:20Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://vmalert:8080/vmalert/alert?group_id=1&alert_id=1",
+      "fingerprint": "a5d5e52f18dc11ff"
+    },
+    {
+      "status": "resolved",
+      "labels": {
+        "alertgroup": "vm-health",
+        "alertname": "ServiceDown",
+        "instance": "10.244.20.199:9093",
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "10.244.20.199:9093 of job vmalertmanager has been down for more than 2 minutes.",
+        "summary": "Service vmalertmanager is down on 10.244.20.199:9093"
+      },
+      "startsAt": "2026-03-16T07:16:10Z",
+      "endsAt": "2026-03-16T16:21:50Z",
+      "generatorURL": "http://vmalert:8080/vmalert/alert?group_id=1&alert_id=2",
+      "fingerprint": "9d747f5fa8000660"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertgroup": "vm-health",
+        "alertname": "ServiceDown",
+        "instance": "10.244.21.234:9093",
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "10.244.21.234:9093 of job vmalertmanager has been down for more than 2 minutes.",
+        "summary": "Service vmalertmanager is down on 10.244.21.234:9093"
+      },
+      "startsAt": "2026-03-16T07:16:10Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://vmalert:8080/vmalert/alert?group_id=1&alert_id=3",
+      "fingerprint": "2757cb12d09d1af5"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "ServiceDown"
+  },
+  "commonLabels": {
+    "alertgroup": "vm-health",
+    "alertname": "ServiceDown",
+    "severity": "critical"
+  },
+  "commonAnnotations": {},
+  "externalURL": "http://vmalertmanager-alertmanager-1:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical|warning|major\"}:{alertname=\"ServiceDown\"}",
+  "truncatedAlerts": 0
+}`)
 
 	var group AlertGroup
 	err := json.Unmarshal(data, &group)
@@ -89,23 +191,89 @@ func TestAlertGroup_UnmarshalJSON_MultipleAlerts(t *testing.T) {
 		len(group.Alerts), statuses[StatusFiring], statuses[StatusResolved])
 }
 
-func TestAlertGroup_UnmarshalJSON_AllSamples(t *testing.T) {
-	samplesDir := filepath.Join("..", "..", ".scripts", "alert-samples")
-	entries, err := os.ReadDir(samplesDir)
-	require.NoError(t, err)
-	require.NotEmpty(t, entries, "no sample files found")
+func TestAlertGroup_UnmarshalJSON_Invariants(t *testing.T) {
+	samples := map[string]string{
+		"single_firing": `{
+  "receiver": "webhook",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {"alertname": "HighMemory", "severity": "warning"},
+      "annotations": {"summary": "Memory usage is high"},
+      "startsAt": "2026-03-16T10:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://vmalert:8080/vmalert/alert?id=1",
+      "fingerprint": "aaa111"
+    }
+  ],
+  "groupLabels": {"alertname": "HighMemory"},
+  "commonLabels": {"alertname": "HighMemory", "severity": "warning"},
+  "commonAnnotations": {"summary": "Memory usage is high"},
+  "externalURL": "http://alertmanager:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical|warning\"}:{alertname=\"HighMemory\"}",
+  "truncatedAlerts": 0
+}`,
+		"resolved": `{
+  "receiver": "email",
+  "status": "resolved",
+  "alerts": [
+    {
+      "status": "resolved",
+      "labels": {"alertname": "DiskFull", "severity": "critical"},
+      "annotations": {"summary": "Disk full"},
+      "startsAt": "2026-03-16T08:00:00Z",
+      "endsAt": "2026-03-16T09:00:00Z",
+      "generatorURL": "http://vmalert:8080/vmalert/alert?id=2",
+      "fingerprint": "bbb222"
+    }
+  ],
+  "groupLabels": {"alertname": "DiskFull"},
+  "commonLabels": {"alertname": "DiskFull", "severity": "critical"},
+  "commonAnnotations": {"summary": "Disk full"},
+  "externalURL": "http://alertmanager:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical\"}:{alertname=\"DiskFull\"}",
+  "truncatedAlerts": 0
+}`,
+		"multiple_mixed": `{
+  "receiver": "slack",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {"alertname": "PodCrash", "severity": "critical"},
+      "annotations": {"summary": "Pod crashing"},
+      "startsAt": "2026-03-16T07:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://vmalert:8080/vmalert/alert?id=3",
+      "fingerprint": "ccc333"
+    },
+    {
+      "status": "resolved",
+      "labels": {"alertname": "PodCrash", "severity": "critical"},
+      "annotations": {"summary": "Pod crashing"},
+      "startsAt": "2026-03-16T06:00:00Z",
+      "endsAt": "2026-03-16T06:30:00Z",
+      "generatorURL": "http://vmalert:8080/vmalert/alert?id=4",
+      "fingerprint": "ddd444"
+    }
+  ],
+  "groupLabels": {"alertname": "PodCrash"},
+  "commonLabels": {"alertname": "PodCrash", "severity": "critical"},
+  "commonAnnotations": {"summary": "Pod crashing"},
+  "externalURL": "http://alertmanager:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical\"}:{alertname=\"PodCrash\"}",
+  "truncatedAlerts": 0
+}`,
+	}
 
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-
-		t.Run(entry.Name(), func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join(samplesDir, entry.Name()))
-			require.NoError(t, err)
-
+	for name, raw := range samples {
+		t.Run(name, func(t *testing.T) {
 			var group AlertGroup
-			err = json.Unmarshal(data, &group)
+			err := json.Unmarshal([]byte(raw), &group)
 			require.NoError(t, err)
 
 			// Common invariants
@@ -123,7 +291,7 @@ func TestAlertGroup_UnmarshalJSON_AllSamples(t *testing.T) {
 			}
 
 			t.Logf("sample %s: receiver=%s, status=%s, alerts=%d",
-				entry.Name(), group.Receiver, group.Status, len(group.Alerts))
+				name, group.Receiver, group.Status, len(group.Alerts))
 		})
 	}
 }
@@ -191,11 +359,3 @@ func TestAlert_ZeroEndsAt(t *testing.T) {
 	t.Logf("zero endsAt parsed: isZero=%v", alert.EndsAt.IsZero())
 }
 
-// loadSample reads a JSON file from .scripts/alert-samples/.
-func loadSample(t *testing.T, name string) []byte {
-	t.Helper()
-	path := filepath.Join("..", "..", ".scripts", "alert-samples", name)
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	return data
-}
