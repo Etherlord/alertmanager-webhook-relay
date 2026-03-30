@@ -133,6 +133,8 @@ helm install my-relay alertmanager-webhook-relay/alertmanager-webhook-relay \
   --set config.PACHCA_CHAT_ID="12345"
 ```
 
+Для автоматических миграций БД добавьте `--set migration.enabled=true`. Подробности — в [документации по деплою](deployment.md).
+
 Подробнее о параметрах и вариантах деплоя — в [документации по деплою](deployment.md).
 
 ## Дальнейшие шаги

@@ -103,6 +103,37 @@ secret:
   EMAIL_PASSWORD: "your-password"
 ```
 
+### Миграции базы данных
+
+Миграции выполняются автоматически через initContainer (goose) перед стартом приложения.
+
+Для включения:
+
+```yaml
+migration:
+  enabled: true
+```
+
+**Как это работает:**
+- initContainer `migrate` запускает `goose up` перед стартом основного контейнера
+- SQL-файлы из `migrations/<driver>/` пакуются в ConfigMap при публикации чарта
+- ConfigMap монтируется в `/migrations` внутри initContainer
+- DSN передаётся через переменную окружения `GOOSE_DBSTRING`, которая разрешается из `DATABASE_DSN` (определённого в Secret или ConfigMap)
+
+**Рекомендации для SQLite:**
+- Используйте `strategy.type: Recreate` для предотвращения конкуренции за PVC
+- `RollingUpdate` работает, если storage class поддерживает multi-pod mount на одной ноде
+
+**Troubleshooting:**
+
+```bash
+# Просмотр логов миграции
+kubectl logs <pod-name> -c migrate
+
+# Проверка статуса initContainer
+kubectl describe pod <pod-name>
+```
+
 ### Helm-параметры
 
 | Параметр | Описание | Default |
@@ -116,6 +147,9 @@ secret:
 | `persistence.enabled` | PVC для SQLite | `true` |
 | `persistence.size` | Размер тома | `1Gi` |
 | `networkPolicy.enabled` | NetworkPolicy | `true` |
+| `migration.enabled` | initContainer с goose для миграций | `false` |
+| `migration.image.repository` | Образ goose | `ghcr.io/pressly/goose` |
+| `migration.image.tag` | Тег образа goose | `3.27.0` |
 
 ### Безопасность
 
