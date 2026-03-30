@@ -65,6 +65,18 @@ Return the ConfigMap name to use.
 {{- end }}
 
 {{/*
+Map config.DATABASE_DRIVER to goose dialect name.
+*/}}
+{{- define "alertmanager-webhook-relay.gooseDriver" -}}
+{{- $driver := .Values.config.DATABASE_DRIVER -}}
+{{- if eq $driver "sqlite" -}}
+sqlite3
+{{- else -}}
+{{- fail (printf "Unsupported DATABASE_DRIVER for goose migration: %s (supported: sqlite)" $driver) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Create the name of the service account to use.
 */}}
 {{- define "alertmanager-webhook-relay.serviceAccountName" -}}

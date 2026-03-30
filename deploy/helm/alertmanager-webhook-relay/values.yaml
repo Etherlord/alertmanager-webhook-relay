@@ -37,6 +37,19 @@ preStopDelay: 5
 # If this value is too low, Kubernetes will SIGKILL the pod before graceful drain completes.
 terminationGracePeriodSeconds: 30
 
+migration:
+  enabled: false
+  image:
+    repository: ghcr.io/pressly/goose
+    tag: "3.27.0"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
 resources:
   requests:
     cpu: 50m
