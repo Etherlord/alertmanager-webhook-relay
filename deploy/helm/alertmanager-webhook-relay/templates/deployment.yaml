@@ -20,6 +20,9 @@ spec:
         {{- if .Values.secret.create }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
+        {{- if .Values.migration.enabled }}
+        checksum/migrations: {{ include (print $.Template.BasePath "/migration-configmap.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -41,6 +44,48 @@ spec:
         fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
+      {{- if .Values.migration.enabled }}
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.migration.image.repository }}:{{ .Values.migration.image.tag }}"
+          command: ["goose", "up"]
+          {{- if or .Values.configMap.create .Values.configMap.existingConfigMap .Values.secret.useInEnvFrom }}
+          envFrom:
+            {{- if or .Values.configMap.create .Values.configMap.existingConfigMap }}
+            - configMapRef:
+                name: {{ include "alertmanager-webhook-relay.configMapName" . }}
+            {{- end }}
+            {{- if .Values.secret.useInEnvFrom }}
+            - secretRef:
+                name: {{ include "alertmanager-webhook-relay.secretName" . }}
+            {{- end }}
+          {{- end }}
+          env:
+            - name: GOOSE_DRIVER
+              value: {{ include "alertmanager-webhook-relay.gooseDriver" . }}
+            - name: GOOSE_DBSTRING
+              value: "$(DATABASE_DSN)"
+            - name: GOOSE_MIGRATION_DIR
+              value: /migrations
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -95,6 +140,11 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
+        {{- if .Values.migration.enabled }}
+        - name: migrations
+          configMap:
+            name: {{ include "alertmanager-webhook-relay.fullname" . }}-migrations
+        {{- end }}
         {{- if .Values.persistence.enabled }}
         - name: data
           persistentVolumeClaim:
