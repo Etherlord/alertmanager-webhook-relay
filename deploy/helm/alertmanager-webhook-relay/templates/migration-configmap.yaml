@@ -1,0 +1,15 @@
+{{- if .Values.migration.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "alertmanager-webhook-relay.fullname" . }}-migrations
+  labels:
+    {{- include "alertmanager-webhook-relay.labels" . | nindent 4 }}
+data:
+  {{- $driver := .Values.config.DATABASE_DRIVER }}
+  {{- $pattern := printf "files/migrations/%s/*" $driver }}
+  {{- range $path, $_ := .Files.Glob $pattern }}
+  {{ $path | base }}: |
+{{ $.Files.Get $path | indent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,4 +1,4 @@
-.PHONY: help build test test-race test-cover test-integration fmt vet lint check helm-lint docker-lint check-all clean migrate-up migrate-down migrate-status migrate-create
+.PHONY: help build test test-race test-cover test-integration fmt vet lint check helm-lint docker-lint check-all clean migrate-up migrate-down migrate-status migrate-create helm-prepare
 
 APP_NAME := alertmanager-webhook-relay
 RUN := docker compose --profile tools run --rm dev
@@ -64,6 +64,13 @@ migrate-status: ## Показать статус миграций
 
 migrate-create: ## Создать новую миграцию (NAME=имя)
 	$(GOOSE) -dir /migrations sqlite3 /data/alerts.db create $(NAME) sql
+
+## Helm
+
+CHART_DIR := deploy/helm/alertmanager-webhook-relay
+
+helm-prepare: ## Скопировать миграции в Helm chart (для локальной разработки)
+	cp -r migrations/ $(CHART_DIR)/files/migrations/
 
 ## Очистка
 

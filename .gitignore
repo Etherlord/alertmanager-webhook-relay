@@ -27,6 +27,9 @@ coverage.html
 # Data
 data/*.db
 
+# Helm chart migration files (copied by CI/Makefile, not committed)
+deploy/helm/alertmanager-webhook-relay/files/
+
 # OS
 .DS_Store
 Thumbs.db

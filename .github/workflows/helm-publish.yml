@@ -53,6 +53,9 @@ jobs:
           sed -i "s/^version:.*/version: ${VERSION}/" "${CHART_DIR}/Chart.yaml"
           sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${CHART_DIR}/Chart.yaml"
 
+      - name: Copy migrations into Helm chart
+        run: cp -r migrations/ "${CHART_DIR}/files/migrations/"
+
       - name: Package Helm chart
         run: helm package "$CHART_DIR"
 
