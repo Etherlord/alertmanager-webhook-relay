@@ -48,6 +48,7 @@ spec:
       initContainers:
         - name: migrate
           image: "{{ .Values.migration.image.repository }}:{{ .Values.migration.image.tag }}"
+          imagePullPolicy: {{ .Values.migration.image.pullPolicy | default "IfNotPresent" }}
           command: ["goose", "up"]
           {{- if or .Values.configMap.create .Values.configMap.existingConfigMap .Values.secret.useInEnvFrom }}
           envFrom:

@@ -70,6 +70,7 @@ migrate-create: ## Создать новую миграцию (NAME=имя)
 CHART_DIR := deploy/helm/alertmanager-webhook-relay
 
 helm-prepare: ## Скопировать миграции в Helm chart (для локальной разработки)
+	mkdir -p $(CHART_DIR)/files/
 	cp -r migrations/ $(CHART_DIR)/files/migrations/
 
 ## Очистка
