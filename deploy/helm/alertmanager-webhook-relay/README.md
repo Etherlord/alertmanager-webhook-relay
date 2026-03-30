@@ -76,9 +76,20 @@ helm install my-relay ./deploy/helm/alertmanager-webhook-relay -f my-values.yaml
 
 ### Config (ConfigMap)
 
+| Параметр | Описание | Default |
+|----------|----------|---------|
+| `configMap.create` | Создавать ConfigMap с параметрами из `config` | `true` |
+| `configMap.existingConfigMap` | Имя существующего ConfigMap (вместо создания нового) | `""` |
+
 Non-sensitive параметры передаются через ConfigMap. Полный список — в `values.yaml`, секция `config`.
 
 ### Secret
+
+| Параметр | Описание | Default |
+|----------|----------|---------|
+| `secret.create` | Создавать Secret с данными из `secret.*` | `true` |
+| `secret.existingSecret` | Имя существующего Secret (вместо создания нового) | `""` |
+| `secret.useInEnvFrom` | Подключать Secret через envFrom в контейнер | `true` |
 
 Sensitive параметры передаются через Secret. Замените placeholder-значения перед деплоем:
 
@@ -116,6 +127,34 @@ config:
 secret:
   EMAIL_USERNAME: "alerts@example.com"
   EMAIL_PASSWORD: "your-password"
+```
+
+### Использование внешнего Secret
+
+Если секреты управляются вне Helm (например, через External Secrets Operator):
+
+```yaml
+secret:
+  create: false
+  existingSecret: "my-external-secret"  # имя существующего Secret в namespace
+```
+
+### Использование внешнего ConfigMap
+
+```yaml
+configMap:
+  create: false
+  existingConfigMap: "my-external-configmap"  # имя существующего ConfigMap в namespace
+```
+
+### Секреты без envFrom (монтирование через volumes)
+
+Если секреты передаются не через envFrom, а, например, через volume mount:
+
+```yaml
+secret:
+  create: false
+  useInEnvFrom: false  # secretRef не будет в envFrom
 ```
 
 ### Ограничение ingress до конкретного namespace

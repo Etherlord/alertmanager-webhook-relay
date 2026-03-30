@@ -14,8 +14,12 @@ spec:
   template:
     metadata:
       annotations:
+        {{- if .Values.configMap.create }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.secret.create }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -45,11 +49,17 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          {{- if or .Values.configMap.create .Values.configMap.existingConfigMap .Values.secret.useInEnvFrom }}
           envFrom:
+            {{- if or .Values.configMap.create .Values.configMap.existingConfigMap }}
             - configMapRef:
-                name: {{ include "alertmanager-webhook-relay.fullname" . }}
+                name: {{ include "alertmanager-webhook-relay.configMapName" . }}
+            {{- end }}
+            {{- if .Values.secret.useInEnvFrom }}
             - secretRef:
-                name: {{ include "alertmanager-webhook-relay.fullname" . }}
+                name: {{ include "alertmanager-webhook-relay.secretName" . }}
+            {{- end }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

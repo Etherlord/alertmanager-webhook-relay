@@ -51,6 +51,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Return the Secret name to use.
+*/}}
+{{- define "alertmanager-webhook-relay.secretName" -}}
+{{- default (include "alertmanager-webhook-relay.fullname" .) .Values.secret.existingSecret }}
+{{- end }}
+
+{{/*
+Return the ConfigMap name to use.
+*/}}
+{{- define "alertmanager-webhook-relay.configMapName" -}}
+{{- default (include "alertmanager-webhook-relay.fullname" .) .Values.configMap.existingConfigMap }}
+{{- end }}
+
+{{/*
 Create the name of the service account to use.
 */}}
 {{- define "alertmanager-webhook-relay.serviceAccountName" -}}

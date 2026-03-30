@@ -92,9 +92,16 @@ config:
   TEMPLATE_DIR: "/templates/email"  # baked into Docker image via COPY
   TEMPLATE_RELOAD: ""
 
+# ConfigMap creation and naming
+configMap:
+  create: true
+  existingConfigMap: ""  # Name of an existing ConfigMap to use instead of creating one
+
 # Sensitive config -> Secret (stringData, placeholders)
 secret:
   create: true
+  existingSecret: ""   # Name of an existing Secret to use instead of creating one
+  useInEnvFrom: true   # Set to false to exclude secretRef from envFrom entirely
   DATABASE_DSN: "CHANGE_ME"
   PACHCA_TOKEN: ""
   EMAIL_USERNAME: ""
