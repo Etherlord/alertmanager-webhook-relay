@@ -18,5 +18,15 @@ Alertmanager Webhook Relay has been deployed.
        webhook_configs:
          - url: 'http://{{ include "alertmanager-webhook-relay.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/api/v1/alerts'
 
+{{- if .Values.migration.enabled }}
+5. Database migrations:
+   Migrations run automatically via initContainer before the application starts.
+   View migration logs:
+   kubectl logs {{ include "alertmanager-webhook-relay.fullname" . }}-<pod-hash> -c migrate
+
+   TIP: For SQLite deployments, use strategy.type: Recreate to avoid
+   concurrent PVC access issues with ReadWriteOnce volumes.
+{{- end }}
+
 IMPORTANT: Update secret values before production use:
    kubectl edit secret {{ include "alertmanager-webhook-relay.fullname" . }}
