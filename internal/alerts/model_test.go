@@ -358,4 +358,3 @@ func TestAlert_ZeroEndsAt(t *testing.T) {
 	assert.True(t, alert.EndsAt.IsZero(), "endsAt 0001-01-01 should parse as zero time")
 	t.Logf("zero endsAt parsed: isZero=%v", alert.EndsAt.IsZero())
 }
-

@@ -17,6 +17,19 @@ var filteredLabels = map[string]struct{}{
 	"severity":  {},
 }
 
+// priorityLabels defines the display order for important labels (shown first, bold).
+var priorityLabels = []string{
+	"namespace",
+	"exported_namespace",
+	"pod",
+	"exported_pod",
+	"container",
+	"exported_container",
+	"deployment",
+	"statefulset",
+	"daemonset",
+}
+
 // FormatNotification formats a Notification into a Pachca Markdown message.
 func FormatNotification(n *notify.Notification) string {
 	var b strings.Builder
@@ -61,11 +74,11 @@ func writeHeader(b *strings.Builder, n *notify.Notification) {
 		count = countByStatus(n.Alerts, alerts.StatusFiring)
 	}
 
-	fmt.Fprintf(b, "%s [%s:%d] %s", emoji, statusLabel, count, alertname)
+	fmt.Fprintf(b, "**%s [%s:%d] %s", emoji, statusLabel, count, alertname)
 	if severity != "" {
 		fmt.Fprintf(b, " (%s)", severity)
 	}
-	b.WriteByte('\n')
+	b.WriteString("**\n")
 }
 
 // writeAlertmanagerURL writes the Alertmanager external URL line.
@@ -108,25 +121,39 @@ func writeAlert(b *strings.Builder, num int, a *alerts.Alert) {
 	}
 }
 
-// writeLabels writes the filtered and sorted labels line.
+// writeLabels writes labels vertically: priority labels first (bold), then the rest alphabetically.
 func writeLabels(b *strings.Builder, labels map[string]string) {
-	keys := make([]string, 0, len(labels))
+	// Collect non-filtered keys.
+	keys := make(map[string]struct{}, len(labels))
 	for k := range labels {
 		if _, skip := filteredLabels[k]; !skip {
-			keys = append(keys, k)
+			keys[k] = struct{}{}
 		}
 	}
 	if len(keys) == 0 {
 		return
 	}
 
-	sort.Strings(keys)
+	b.WriteString("\nLabels:\n")
 
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%s", k, labels[k]))
+	// Priority labels first, in defined order.
+	for _, k := range priorityLabels {
+		if _, ok := keys[k]; ok {
+			fmt.Fprintf(b, "**%s:** %s\n", k, labels[k])
+			delete(keys, k)
+		}
 	}
-	fmt.Fprintf(b, "Labels: %s\n", strings.Join(parts, ", "))
+
+	// Remaining labels sorted alphabetically.
+	remaining := make([]string, 0, len(keys))
+	for k := range keys {
+		remaining = append(remaining, k)
+	}
+	sort.Strings(remaining)
+
+	for _, k := range remaining {
+		fmt.Fprintf(b, "%s: %s\n", k, labels[k])
+	}
 }
 
 // countByStatus counts alerts with the given status.

@@ -46,11 +46,8 @@ func TestFormatNotification_FiringGroup(t *testing.T) {
 	result := FormatNotification(n)
 	t.Logf("formatted:\n%s", result)
 
-	// Header
-	assert.Contains(t, result, "🔥")
-	assert.Contains(t, result, "[FIRING:2]")
-	assert.Contains(t, result, "ServiceDown")
-	assert.Contains(t, result, "(critical)")
+	// Bold header
+	assert.Contains(t, result, "**🔥 [FIRING:2] ServiceDown (critical)**")
 
 	// Alertmanager URL
 	assert.Contains(t, result, "http://vmalertmanager:9093")
@@ -91,10 +88,8 @@ func TestFormatNotification_ResolvedGroup(t *testing.T) {
 	result := FormatNotification(n)
 	t.Logf("formatted:\n%s", result)
 
-	assert.Contains(t, result, "✅")
-	assert.Contains(t, result, "[RESOLVED:1]")
-	assert.Contains(t, result, "ServiceDown")
-	assert.Contains(t, result, "(warning)")
+	// Bold header
+	assert.Contains(t, result, "**✅ [RESOLVED:1] ServiceDown (warning)**")
 	assert.Contains(t, result, "RESOLVED ✅")
 	assert.Contains(t, result, "2026-03-16 16:21:50 UTC")
 }
@@ -196,6 +191,7 @@ func TestFormatNotification_LabelsFilteredAndSorted(t *testing.T) {
 					"namespace": "monitoring",
 					"pod":       "pod-1",
 					"container": "alertmanager",
+					"job":       "kube-state-metrics",
 				},
 				Annotations: map[string]string{"summary": "Down"},
 				StartsAt:    makeTime("2026-03-16T07:15:20Z"),
@@ -207,25 +203,17 @@ func TestFormatNotification_LabelsFilteredAndSorted(t *testing.T) {
 	result := FormatNotification(n)
 	t.Logf("formatted:\n%s", result)
 
-	// alertname and severity should be filtered
-	lines := strings.Split(result, "\n")
-	var labelsLine string
-	for _, l := range lines {
-		if strings.HasPrefix(l, "Labels:") {
-			labelsLine = l
-			break
-		}
-	}
+	// alertname and severity should be filtered out
+	assert.NotContains(t, result, "alertname:")
+	assert.NotContains(t, result, "severity:")
 
-	assert.NotEmpty(t, labelsLine)
-	assert.NotContains(t, labelsLine, "alertname=")
-	assert.NotContains(t, labelsLine, "severity=")
-	// Should be sorted: container, namespace, pod
-	containerIdx := strings.Index(labelsLine, "container=")
-	namespaceIdx := strings.Index(labelsLine, "namespace=")
-	podIdx := strings.Index(labelsLine, "pod=")
-	assert.Greater(t, namespaceIdx, containerIdx)
-	assert.Greater(t, podIdx, namespaceIdx)
+	// Priority labels are bold, in priority order: namespace, pod, container
+	labelLines := extractLabelLines(t, result)
+
+	assert.Equal(t, "**namespace:** monitoring", labelLines[0])
+	assert.Equal(t, "**pod:** pod-1", labelLines[1])
+	assert.Equal(t, "**container:** alertmanager", labelLines[2])
+	assert.Equal(t, "job: kube-state-metrics", labelLines[3])
 }
 
 func TestFormatNotification_TruncatedAlerts(t *testing.T) {
@@ -348,4 +336,178 @@ func TestFormatNotification_NoSeverity(t *testing.T) {
 	// Header without severity
 	assert.Contains(t, result, "TestAlert")
 	assert.NotContains(t, result, "()")
+}
+
+func TestFormatNotification_OnlyPriorityLabels(t *testing.T) {
+	n := &notify.Notification{
+		Status:      alerts.StatusFiring,
+		ExternalURL: "http://vmalertmanager:9093",
+		CommonLabels: map[string]string{
+			"alertname": "TestAlert",
+			"severity":  "critical",
+		},
+		Alerts: []alerts.Alert{
+			{
+				Status: alerts.StatusFiring,
+				Labels: map[string]string{
+					"alertname":  "TestAlert",
+					"severity":   "critical",
+					"namespace":  "monitoring",
+					"pod":        "pod-1",
+					"deployment": "my-deploy",
+				},
+				Annotations: map[string]string{"summary": "Test"},
+				StartsAt:    makeTime("2026-03-16T07:15:20Z"),
+			},
+		},
+		AlertsCount: 1,
+	}
+
+	result := FormatNotification(n)
+	t.Logf("formatted:\n%s", result)
+
+	lines := extractLabelLines(t, result)
+
+	// All bold, in priority order: namespace, pod, deployment
+	assert.Len(t, lines, 3)
+	assert.Equal(t, "**namespace:** monitoring", lines[0])
+	assert.Equal(t, "**pod:** pod-1", lines[1])
+	assert.Equal(t, "**deployment:** my-deploy", lines[2])
+}
+
+func TestFormatNotification_OnlyRegularLabels(t *testing.T) {
+	n := &notify.Notification{
+		Status:      alerts.StatusFiring,
+		ExternalURL: "http://vmalertmanager:9093",
+		CommonLabels: map[string]string{
+			"alertname": "TestAlert",
+			"severity":  "critical",
+		},
+		Alerts: []alerts.Alert{
+			{
+				Status: alerts.StatusFiring,
+				Labels: map[string]string{
+					"alertname": "TestAlert",
+					"severity":  "critical",
+					"job":       "kube-state-metrics",
+					"endpoint":  "http",
+					"instance":  "10.0.0.1:8080",
+				},
+				Annotations: map[string]string{"summary": "Test"},
+				StartsAt:    makeTime("2026-03-16T07:15:20Z"),
+			},
+		},
+		AlertsCount: 1,
+	}
+
+	result := FormatNotification(n)
+	t.Logf("formatted:\n%s", result)
+
+	lines := extractLabelLines(t, result)
+
+	// No bold, alphabetical order
+	assert.Len(t, lines, 3)
+	assert.Equal(t, "endpoint: http", lines[0])
+	assert.Equal(t, "instance: 10.0.0.1:8080", lines[1])
+	assert.Equal(t, "job: kube-state-metrics", lines[2])
+}
+
+func TestFormatNotification_MixedPriorityAndRegularLabels(t *testing.T) {
+	n := &notify.Notification{
+		Status:      alerts.StatusFiring,
+		ExternalURL: "http://vmalertmanager:9093",
+		CommonLabels: map[string]string{
+			"alertname": "TestAlert",
+			"severity":  "critical",
+		},
+		Alerts: []alerts.Alert{
+			{
+				Status: alerts.StatusFiring,
+				Labels: map[string]string{
+					"alertname":          "TestAlert",
+					"severity":           "critical",
+					"namespace":          "kube-state-metrics",
+					"pod":                "kube-state-metrics-584f744969-ks2jx",
+					"container":          "kube-state-metrics",
+					"deployment":         "new-presentation-generator-api",
+					"exported_namespace": "new-presentation-generator",
+					"alertgroup":         "k8s-alerts",
+					"endpoint":           "http",
+					"instance":           "10.244.20.15:8080",
+					"job":                "kube-state-metrics",
+					"prometheus":         "monitoring/vm-agent",
+					"service":            "kube-state-metrics",
+				},
+				Annotations: map[string]string{"summary": "Mismatch"},
+				StartsAt:    makeTime("2026-03-16T07:23:00Z"),
+			},
+		},
+		AlertsCount: 1,
+	}
+
+	result := FormatNotification(n)
+	t.Logf("formatted:\n%s", result)
+
+	lines := extractLabelLines(t, result)
+
+	// Priority labels first (bold), in priority order
+	assert.Equal(t, "**namespace:** kube-state-metrics", lines[0])
+	assert.Equal(t, "**exported_namespace:** new-presentation-generator", lines[1])
+	assert.Equal(t, "**pod:** kube-state-metrics-584f744969-ks2jx", lines[2])
+	assert.Equal(t, "**container:** kube-state-metrics", lines[3])
+	assert.Equal(t, "**deployment:** new-presentation-generator-api", lines[4])
+
+	// Regular labels alphabetically
+	assert.Equal(t, "alertgroup: k8s-alerts", lines[5])
+	assert.Equal(t, "endpoint: http", lines[6])
+	assert.Equal(t, "instance: 10.244.20.15:8080", lines[7])
+	assert.Equal(t, "job: kube-state-metrics", lines[8])
+	assert.Equal(t, "prometheus: monitoring/vm-agent", lines[9])
+	assert.Equal(t, "service: kube-state-metrics", lines[10])
+}
+
+func TestFormatNotification_EmptyLineBeforeLabels(t *testing.T) {
+	n := &notify.Notification{
+		Status:      alerts.StatusFiring,
+		ExternalURL: "http://vmalertmanager:9093",
+		CommonLabels: map[string]string{
+			"alertname": "TestAlert",
+			"severity":  "critical",
+		},
+		Alerts: []alerts.Alert{
+			{
+				Status:      alerts.StatusFiring,
+				Labels:      map[string]string{"alertname": "TestAlert", "severity": "critical", "namespace": "test"},
+				Annotations: map[string]string{"summary": "Test"},
+				StartsAt:    makeTime("2026-03-16T07:15:20Z"),
+			},
+		},
+		AlertsCount: 1,
+	}
+
+	result := FormatNotification(n)
+	t.Logf("formatted:\n%s", result)
+
+	// Empty line before "Labels:" ensures visual separation
+	assert.Contains(t, result, "\n\nLabels:\n")
+}
+
+// extractLabelLines parses the label block from formatted output, returning individual label lines.
+func extractLabelLines(_ *testing.T, result string) []string {
+	lines := strings.Split(result, "\n")
+	var labelLines []string
+	inLabels := false
+	for _, l := range lines {
+		if l == "Labels:" {
+			inLabels = true
+			continue
+		}
+		if inLabels {
+			if l == "" || l == "---" {
+				break
+			}
+			labelLines = append(labelLines, l)
+		}
+	}
+	return labelLines
 }
