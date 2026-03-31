@@ -49,7 +49,8 @@ services:
       - test
 
   migrate:
-    image: ghcr.io/pressly/goose:3.27.0
+    build:
+      context: build/goose
     volumes:
       - ./migrations/sqlite:/migrations
       - ./data:/data

@@ -40,7 +40,7 @@ terminationGracePeriodSeconds: 30
 migration:
   enabled: false
   image:
-    repository: ghcr.io/pressly/goose
+    repository: ghcr.io/etherlord/goose
     tag: "3.27.0"
   resources:
     requests:

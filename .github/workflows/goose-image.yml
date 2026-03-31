@@ -1,0 +1,49 @@
+name: Goose Image
+
+on:
+  push:
+    paths: ["build/goose/**"]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      goose_version:
+        description: "Goose version tag (e.g. v3.27.0)"
+        required: false
+        default: "v3.27.0"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build and Push Goose Image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve version
+        run: |
+          VERSION="${{ inputs.goose_version || 'v3.27.0' }}"
+          echo "GOOSE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "GOOSE_TAG=${VERSION#v}" >> "$GITHUB_ENV"
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: build/goose
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: GOOSE_VERSION=${{ env.GOOSE_VERSION }}
+          tags: |
+            ghcr.io/etherlord/goose:${{ env.GOOSE_TAG }}
+            ghcr.io/etherlord/goose:latest
