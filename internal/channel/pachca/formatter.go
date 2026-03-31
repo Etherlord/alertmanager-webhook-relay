@@ -28,6 +28,7 @@ var priorityLabels = []string{
 	"deployment",
 	"statefulset",
 	"daemonset",
+	"replicaset",
 }
 
 // FormatNotification formats a Notification into a Pachca Markdown message.
