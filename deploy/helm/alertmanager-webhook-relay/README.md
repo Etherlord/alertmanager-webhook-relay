@@ -70,7 +70,7 @@ helm install my-relay ./deploy/helm/alertmanager-webhook-relay -f my-values.yaml
 | Параметр | Описание | Default |
 |----------|----------|---------|
 | `migration.enabled` | Включить initContainer с goose для миграций | `false` |
-| `migration.image.repository` | Образ goose | `ghcr.io/pressly/goose` |
+| `migration.image.repository` | Образ goose | `ghcr.io/etherlord/goose` |
 | `migration.image.tag` | Тег образа goose | `3.27.1` |
 | `migration.resources` | Resource limits/requests для initContainer | requests: 50m/32Mi, limits: 100m/64Mi |
 
