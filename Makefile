@@ -1,4 +1,4 @@
-.PHONY: help build test test-race test-cover test-integration fmt vet lint check helm-lint docker-lint check-all clean migrate-up migrate-down migrate-status migrate-create helm-prepare
+.PHONY: help build test test-race test-cover test-integration fmt vet lint check helm-lint docker-lint check-goose-version check-all clean migrate-up migrate-down migrate-status migrate-create helm-prepare
 
 APP_NAME := alertmanager-webhook-relay
 RUN := docker compose --profile tools run --rm dev
@@ -49,7 +49,15 @@ helm-lint: ## Проверить Helm chart
 docker-lint: ## Проверить Dockerfile (hadolint)
 	docker compose --profile tools run --rm hadolint hadolint Dockerfile
 
-check-all: check helm-lint docker-lint ## Полная проверка: Go + Helm + Dockerfile
+check-goose-version: ## Сверить версию goose в go.mod, Dockerfile и workflow
+	@VERSION=$$(awk '/github.com\/pressly\/goose\/v3 / {print $$2}' go.mod) ; \
+	if [ -z "$$VERSION" ] ; then echo "goose version not found in go.mod"; exit 1 ; fi ; \
+	grep -q "ARG GOOSE_VERSION=$$VERSION" build/goose/Dockerfile || { echo "build/goose/Dockerfile out of sync (expected $$VERSION)"; exit 1; } ; \
+	grep -q "default: \"$$VERSION\"" .github/workflows/goose-image.yml || { echo "goose-image.yml default out of sync (expected $$VERSION)"; exit 1; } ; \
+	grep -q "goose_version || '$$VERSION'" .github/workflows/goose-image.yml || { echo "goose-image.yml fallback out of sync (expected $$VERSION)"; exit 1; } ; \
+	echo "goose version synced: $$VERSION"
+
+check-all: check-goose-version check helm-lint docker-lint ## Полная проверка: Go + Helm + Dockerfile
 
 ## Миграции
 

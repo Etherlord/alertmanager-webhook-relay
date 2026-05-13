@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       goose_version:
-        description: "Goose version tag (e.g. v3.27.0)"
+        description: "Goose version tag (e.g. v3.27.1)"
         required: false
-        default: "v3.27.0"
+        default: "v3.27.1"
 
 permissions:
   contents: read
@@ -34,7 +34,7 @@ jobs:
 
       - name: Resolve version
         run: |
-          VERSION="${{ inputs.goose_version || 'v3.27.0' }}"
+          VERSION="${{ inputs.goose_version || 'v3.27.1' }}"
           echo "GOOSE_VERSION=${VERSION}" >> "$GITHUB_ENV"
           echo "GOOSE_TAG=${VERSION#v}" >> "$GITHUB_ENV"
 
