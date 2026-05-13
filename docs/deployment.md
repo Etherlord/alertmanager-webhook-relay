@@ -149,7 +149,7 @@ kubectl describe pod <pod-name>
 | `networkPolicy.enabled` | NetworkPolicy | `true` |
 | `migration.enabled` | initContainer с goose для миграций | `false` |
 | `migration.image.repository` | Образ goose | `ghcr.io/etherlord/goose` |
-| `migration.image.tag` | Тег образа goose | `3.27.0` |
+| `migration.image.tag` | Тег образа goose | `3.27.1` |
 
 ### Безопасность
 

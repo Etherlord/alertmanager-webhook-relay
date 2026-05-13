@@ -49,13 +49,17 @@ helm-lint: ## Проверить Helm chart
 docker-lint: ## Проверить Dockerfile (hadolint)
 	docker compose --profile tools run --rm hadolint hadolint Dockerfile
 
-check-goose-version: ## Сверить версию goose в go.mod, Dockerfile и workflow
+check-goose-version: ## Сверить версию goose: go.mod ↔ Dockerfile ↔ workflow ↔ Helm ↔ docs
 	@VERSION=$$(awk '/github.com\/pressly\/goose\/v3 / {print $$2}' go.mod) ; \
 	if [ -z "$$VERSION" ] ; then echo "goose version not found in go.mod"; exit 1 ; fi ; \
+	TAG=$${VERSION#v} ; \
 	grep -q "ARG GOOSE_VERSION=$$VERSION" build/goose/Dockerfile || { echo "build/goose/Dockerfile out of sync (expected $$VERSION)"; exit 1; } ; \
 	grep -q "default: \"$$VERSION\"" .github/workflows/goose-image.yml || { echo "goose-image.yml default out of sync (expected $$VERSION)"; exit 1; } ; \
 	grep -q "goose_version || '$$VERSION'" .github/workflows/goose-image.yml || { echo "goose-image.yml fallback out of sync (expected $$VERSION)"; exit 1; } ; \
-	echo "goose version synced: $$VERSION"
+	grep -q "tag: \"$$TAG\"" deploy/helm/alertmanager-webhook-relay/values.yaml || { echo "Helm values.yaml migration.image.tag out of sync (expected $$TAG)"; exit 1; } ; \
+	grep -q "\`$$TAG\`" deploy/helm/alertmanager-webhook-relay/README.md || { echo "Helm README.md goose tag out of sync (expected $$TAG)"; exit 1; } ; \
+	grep -q "\`$$TAG\`" docs/deployment.md || { echo "docs/deployment.md goose tag out of sync (expected $$TAG)"; exit 1; } ; \
+	echo "goose version synced: $$VERSION (helm tag: $$TAG)"
 
 check-all: check-goose-version check helm-lint docker-lint ## Полная проверка: Go + Helm + Dockerfile
 
