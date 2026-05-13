@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Base stage: download dependencies ---
-FROM golang:1.26.1 AS base
+FROM golang:1.26.3 AS base
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
