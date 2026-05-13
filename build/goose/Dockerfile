@@ -3,7 +3,7 @@
 # Minimal goose image built from official source.
 # Replaces the non-existent ghcr.io/pressly/goose image.
 
-ARG GOOSE_VERSION=v3.27.0
+ARG GOOSE_VERSION=v3.27.1
 
 FROM golang:1.26.3-alpine AS builder
 ARG GOOSE_VERSION
