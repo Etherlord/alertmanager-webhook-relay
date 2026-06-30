@@ -15,7 +15,7 @@ jobs:
     name: Build and Push Docker Image
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-qemu-action@v4
 
@@ -49,7 +49,7 @@ jobs:
     needs: release
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
         with:
@@ -67,7 +67,7 @@ jobs:
       - name: Generate checksums
         run: sha256sum alertmanager-webhook-relay-linux-* > checksums.txt
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           append_body: true

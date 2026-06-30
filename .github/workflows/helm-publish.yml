@@ -35,7 +35,7 @@ jobs:
     env:
       CHART_DIR: deploy/helm/alertmanager-webhook-relay
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -59,7 +59,7 @@ jobs:
       - name: Package Helm chart
         run: helm package "$CHART_DIR"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: gh-pages
           path: gh-pages
