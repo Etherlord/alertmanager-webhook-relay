@@ -5,7 +5,7 @@
 
 ARG GOOSE_VERSION=v3.27.1
 
-FROM golang:1.26.3-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 ARG GOOSE_VERSION
 RUN go install github.com/pressly/goose/v3/cmd/goose@${GOOSE_VERSION}
 

@@ -1,4 +1,4 @@
-.PHONY: help build test test-race test-cover test-integration fmt vet lint check helm-lint docker-lint check-goose-version check-all clean migrate-up migrate-down migrate-status migrate-create helm-prepare
+.PHONY: help build test test-race test-cover test-integration fmt vet lint check helm-lint docker-lint check-goose-version check-golangci-version check-all clean migrate-up migrate-down migrate-status migrate-create helm-prepare
 
 APP_NAME := alertmanager-webhook-relay
 RUN := docker compose --profile tools run --rm dev
@@ -66,7 +66,13 @@ check-goose-version: ## Сверить версию и repo goose: go.mod ↔ Do
 	grep -q "\`$$REPO\`" docs/deployment.md || { echo "docs/deployment.md goose repository out of sync (expected $$REPO)"; exit 1; } ; \
 	echo "goose synced: $$REPO version=$$VERSION (helm tag: $$TAG)"
 
-check-all: check-goose-version check helm-lint docker-lint ## Полная проверка: Go + Helm + Dockerfile
+check-golangci-version: ## Сверить версию golangci-lint: Dockerfile ↔ ci.yml
+	@VERSION=$$(grep -oE 'golangci-lint@v[0-9]+\.[0-9]+\.[0-9]+' Dockerfile | head -1 | sed 's/^golangci-lint@//') ; \
+	if [ -z "$$VERSION" ] ; then echo "golangci-lint version not found in Dockerfile"; exit 1 ; fi ; \
+	grep -q "version: $$VERSION" .github/workflows/ci.yml || { echo ".github/workflows/ci.yml golangci-lint version out of sync (expected $$VERSION)"; exit 1; } ; \
+	echo "golangci-lint synced: $$VERSION"
+
+check-all: check-goose-version check-golangci-version check helm-lint docker-lint ## Полная проверка: Go + Helm + Dockerfile
 
 ## Миграции
 
