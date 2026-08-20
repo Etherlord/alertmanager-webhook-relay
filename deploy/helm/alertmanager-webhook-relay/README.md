@@ -67,11 +67,11 @@ helm install my-relay ./deploy/helm/alertmanager-webhook-relay -f my-values.yaml
 
 ### Database Migrations
 
-| Параметр | Описание | Default |
-|----------|----------|---------|
-| `migration.enabled` | Включить initContainer с goose для миграций | `false` |
-| `migration.image.repository` | Образ goose | `ghcr.io/etherlord/goose` |
-| `migration.image.tag` | Тег образа goose | `3.27.2` |
+| Параметр | Описание | Default                               |
+|----------|----------|---------------------------------------|
+| `migration.enabled` | Включить initContainer с goose для миграций | `false`                               |
+| `migration.image.repository` | Образ goose | `ghcr.io/etherlord/goose`             |
+| `migration.image.tag` | Тег образа goose | `3.27.3`                              |
 | `migration.resources` | Resource limits/requests для initContainer | requests: 50m/32Mi, limits: 100m/64Mi |
 
 Миграции выполняются initContainer перед стартом приложения. SQL-файлы загружаются из ConfigMap, который собирается из `migrations/<driver>/` при публикации чарта.

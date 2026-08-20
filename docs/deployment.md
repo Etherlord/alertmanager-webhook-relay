@@ -136,20 +136,20 @@ kubectl describe pod <pod-name>
 
 ### Helm-параметры
 
-| Параметр | Описание | Default |
-|----------|----------|---------|
-| `replicaCount` | Количество реплик | `1` |
+| Параметр | Описание | Default                      |
+|----------|----------|------------------------------|
+| `replicaCount` | Количество реплик | `1`                          |
 | `image.repository` | Docker-образ | `alertmanager-webhook-relay` |
-| `image.tag` | Тег образа | `appVersion` из Chart.yaml |
-| `strategy.type` | Стратегия деплоя | `RollingUpdate` |
-| `service.type` | Тип сервиса | `ClusterIP` |
-| `service.port` | Порт | `8080` |
-| `persistence.enabled` | PVC для SQLite | `true` |
-| `persistence.size` | Размер тома | `1Gi` |
-| `networkPolicy.enabled` | NetworkPolicy | `true` |
-| `migration.enabled` | initContainer с goose для миграций | `false` |
-| `migration.image.repository` | Образ goose | `ghcr.io/etherlord/goose` |
-| `migration.image.tag` | Тег образа goose | `3.27.2` |
+| `image.tag` | Тег образа | `appVersion` из Chart.yaml   |
+| `strategy.type` | Стратегия деплоя | `RollingUpdate`              |
+| `service.type` | Тип сервиса | `ClusterIP`                  |
+| `service.port` | Порт | `8080`                       |
+| `persistence.enabled` | PVC для SQLite | `true`                       |
+| `persistence.size` | Размер тома | `1Gi`                        |
+| `networkPolicy.enabled` | NetworkPolicy | `true`                       |
+| `migration.enabled` | initContainer с goose для миграций | `false`                      |
+| `migration.image.repository` | Образ goose | `ghcr.io/etherlord/goose`    |
+| `migration.image.tag` | Тег образа goose | `3.27.3`                     |
 
 ### Безопасность
 
