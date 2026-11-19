@@ -9,7 +9,7 @@ COPY . .
 
 # --- Dev stage: linting and testing tools ---
 FROM base AS dev
-RUN go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+RUN go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 
 # --- Builder stage: compile binary ---
 FROM base AS builder
