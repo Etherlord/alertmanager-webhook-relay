@@ -41,7 +41,7 @@ migration:
   enabled: false
   image:
     repository: ghcr.io/etherlord/goose
-    tag: "3.27.3"
+    tag: "3.30.1"
   resources:
     requests:
       cpu: 50m
