@@ -313,7 +313,7 @@ func TestDispatcher_ReadinessCheck(t *testing.T) {
 	assert.NoError(t, err)
 
 	cancel()
-	<-done
+	require.NoError(t, <-done)
 }
 
 func TestDispatcher_ShutdownDrainsQueuedNotifications(t *testing.T) {
